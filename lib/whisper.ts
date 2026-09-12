@@ -78,3 +78,41 @@ export async function transcribeAudioFile(audioBlob: Blob, filename: string, gro
     provider
   };
 }
+
+export interface KeyValidationResult {
+  valid: boolean;
+  provider: 'groq' | 'openai';
+  error?: string;
+}
+
+/**
+ * Confirms a key actually authenticates, without spending transcription
+ * credits or requiring an audio file. Hits each provider's models-list
+ * endpoint, which is free and only checks auth — a 200 means the key is
+ * real, a 401/403 means it isn't. A truthy, non-empty string is not the same
+ * thing as a working key (revoked, mistyped, or wrong-provider keys all
+ * still pass a presence check), so this is the check that actually matters
+ * before telling a user transcription is ready to go.
+ */
+export async function validateApiKey(
+  provider: 'groq' | 'openai',
+  key: string
+): Promise<KeyValidationResult> {
+  const endpoint =
+    provider === 'groq'
+      ? 'https://api.groq.com/openai/v1/models'
+      : 'https://api.openai.com/v1/models';
+
+  try {
+    const response = await fetch(endpoint, {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (response.ok) return { valid: true, provider };
+    if (response.status === 401 || response.status === 403) {
+      return { valid: false, provider, error: 'Key was rejected by the provider.' };
+    }
+    return { valid: false, provider, error: `Unexpected response: ${response.status}` };
+  } catch (err) {
+    return { valid: false, provider, error: `Could not reach ${provider}: ${String(err)}` };
+  }
+}
