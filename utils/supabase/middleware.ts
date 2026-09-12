@@ -6,6 +6,17 @@ export async function updateSession(request: NextRequest) {
     request,
   })
 
+  // This runs on EVERY request. createServerClient asserts its env vars, so
+  // without NEXT_PUBLIC_SUPABASE_* it throws here and every page in the app
+  // returns 500 — including the ones that need no database at all. Pass the
+  // request straight through instead; auth simply stays signed out.
+  if (
+    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  ) {
+    return supabaseResponse
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

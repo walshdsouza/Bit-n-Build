@@ -1,0 +1,2055 @@
+{
+  "name": "NEXA",
+  "version": 1,
+  "units": "metres",
+  "up": "+Y",
+  "forward": "+Z",
+  "anatomicalLeft": "+X",
+  "bindPose": "T-pose; palms +Z; local rest quaternions identity",
+  "jointCount": 70,
+  "bones": [
+    {
+      "name": "Root",
+      "parent": null,
+      "translation": [
+        0,
+        0,
+        0
+      ],
+      "world": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "root"
+    },
+    {
+      "name": "Hips",
+      "parent": 0,
+      "translation": [
+        0,
+        0.835,
+        0
+      ],
+      "world": [
+        0,
+        0.835,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "body"
+    },
+    {
+      "name": "Spine",
+      "parent": 1,
+      "translation": [
+        0,
+        0.16000000000000003,
+        0
+      ],
+      "world": [
+        0,
+        0.995,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "body"
+    },
+    {
+      "name": "Chest",
+      "parent": 2,
+      "translation": [
+        0,
+        0.17499999999999993,
+        0
+      ],
+      "world": [
+        0,
+        1.17,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "body"
+    },
+    {
+      "name": "Neck",
+      "parent": 3,
+      "translation": [
+        0,
+        0.14500000000000002,
+        0
+      ],
+      "world": [
+        0,
+        1.315,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "body"
+    },
+    {
+      "name": "Head",
+      "parent": 4,
+      "translation": [
+        0,
+        0.14000000000000012,
+        0
+      ],
+      "world": [
+        0,
+        1.455,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "body"
+    },
+    {
+      "name": "LeftShoulder",
+      "parent": 3,
+      "translation": [
+        0.092,
+        0.08000000000000007,
+        0
+      ],
+      "world": [
+        0.092,
+        1.25,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "body"
+    },
+    {
+      "name": "LeftUpperArm",
+      "parent": 6,
+      "translation": [
+        0.092,
+        0.0,
+        0
+      ],
+      "world": [
+        0.184,
+        1.25,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "body"
+    },
+    {
+      "name": "LeftLowerArm",
+      "parent": 7,
+      "translation": [
+        0.22499999999999998,
+        0.0,
+        0
+      ],
+      "world": [
+        0.409,
+        1.25,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "body"
+    },
+    {
+      "name": "LeftHand",
+      "parent": 8,
+      "translation": [
+        0.20600000000000002,
+        0.0,
+        0
+      ],
+      "world": [
+        0.615,
+        1.25,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "hand"
+    },
+    {
+      "name": "LeftIndex1",
+      "parent": 9,
+      "translation": [
+        0.07999999999999996,
+        0.030000000000000027,
+        0
+      ],
+      "world": [
+        0.695,
+        1.28,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        -1,
+        0
+      ],
+      "finger": "Index",
+      "segment": 1
+    },
+    {
+      "name": "LeftIndex2",
+      "parent": 10,
+      "translation": [
+        0.03300000000000003,
+        0.0,
+        0
+      ],
+      "world": [
+        0.728,
+        1.28,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        -1,
+        0
+      ],
+      "finger": "Index",
+      "segment": 2
+    },
+    {
+      "name": "LeftIndex3",
+      "parent": 11,
+      "translation": [
+        0.02300000000000002,
+        0.0,
+        0
+      ],
+      "world": [
+        0.751,
+        1.28,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        -1,
+        0
+      ],
+      "finger": "Index",
+      "segment": 3
+    },
+    {
+      "name": "LeftIndexTip",
+      "parent": 12,
+      "translation": [
+        0.019000000000000017,
+        0.0,
+        0
+      ],
+      "world": [
+        0.77,
+        1.28,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "tip"
+    },
+    {
+      "name": "LeftMiddle1",
+      "parent": 9,
+      "translation": [
+        0.08499999999999996,
+        0.006999999999999895,
+        0
+      ],
+      "world": [
+        0.7,
+        1.257,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        -1,
+        0
+      ],
+      "finger": "Middle",
+      "segment": 1
+    },
+    {
+      "name": "LeftMiddle2",
+      "parent": 14,
+      "translation": [
+        0.03700000000000003,
+        0.0,
+        0
+      ],
+      "world": [
+        0.737,
+        1.257,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        -1,
+        0
+      ],
+      "finger": "Middle",
+      "segment": 2
+    },
+    {
+      "name": "LeftMiddle3",
+      "parent": 15,
+      "translation": [
+        0.026000000000000023,
+        0.0,
+        0
+      ],
+      "world": [
+        0.763,
+        1.257,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        -1,
+        0
+      ],
+      "finger": "Middle",
+      "segment": 3
+    },
+    {
+      "name": "LeftMiddleTip",
+      "parent": 16,
+      "translation": [
+        0.020000000000000018,
+        0.0,
+        0
+      ],
+      "world": [
+        0.783,
+        1.257,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "tip"
+    },
+    {
+      "name": "LeftRing1",
+      "parent": 9,
+      "translation": [
+        0.08099999999999996,
+        -0.016000000000000014,
+        0
+      ],
+      "world": [
+        0.696,
+        1.234,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        -1,
+        0
+      ],
+      "finger": "Ring",
+      "segment": 1
+    },
+    {
+      "name": "LeftRing2",
+      "parent": 18,
+      "translation": [
+        0.03400000000000003,
+        0.0,
+        0
+      ],
+      "world": [
+        0.73,
+        1.234,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        -1,
+        0
+      ],
+      "finger": "Ring",
+      "segment": 2
+    },
+    {
+      "name": "LeftRing3",
+      "parent": 19,
+      "translation": [
+        0.02400000000000002,
+        0.0,
+        0
+      ],
+      "world": [
+        0.754,
+        1.234,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        -1,
+        0
+      ],
+      "finger": "Ring",
+      "segment": 3
+    },
+    {
+      "name": "LeftRingTip",
+      "parent": 20,
+      "translation": [
+        0.019000000000000017,
+        0.0,
+        0
+      ],
+      "world": [
+        0.773,
+        1.234,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "tip"
+    },
+    {
+      "name": "LeftLittle1",
+      "parent": 9,
+      "translation": [
+        0.06900000000000006,
+        -0.038000000000000034,
+        0
+      ],
+      "world": [
+        0.684,
+        1.212,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        -1,
+        0
+      ],
+      "finger": "Little",
+      "segment": 1
+    },
+    {
+      "name": "LeftLittle2",
+      "parent": 22,
+      "translation": [
+        0.027000000000000024,
+        0.0,
+        0
+      ],
+      "world": [
+        0.7110000000000001,
+        1.212,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        -1,
+        0
+      ],
+      "finger": "Little",
+      "segment": 2
+    },
+    {
+      "name": "LeftLittle3",
+      "parent": 23,
+      "translation": [
+        0.020000000000000018,
+        0.0,
+        0
+      ],
+      "world": [
+        0.7310000000000001,
+        1.212,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        -1,
+        0
+      ],
+      "finger": "Little",
+      "segment": 3
+    },
+    {
+      "name": "LeftLittleTip",
+      "parent": 24,
+      "translation": [
+        0.017000000000000015,
+        0.0,
+        0
+      ],
+      "world": [
+        0.7480000000000001,
+        1.212,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "tip"
+    },
+    {
+      "name": "LeftThumb1",
+      "parent": 9,
+      "translation": [
+        0.02300000000000002,
+        0.03499999999999992,
+        0
+      ],
+      "world": [
+        0.638,
+        1.285,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        -1,
+        0
+      ],
+      "finger": "Thumb",
+      "segment": 1
+    },
+    {
+      "name": "LeftThumb2",
+      "parent": 26,
+      "translation": [
+        0.01583959550123959,
+        0.018030729723367056,
+        0
+      ],
+      "world": [
+        0.6538395955012396,
+        1.303030729723367,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        -1,
+        0
+      ],
+      "finger": "Thumb",
+      "segment": 2
+    },
+    {
+      "name": "LeftThumb3",
+      "parent": 27,
+      "translation": [
+        0.0202987546868042,
+        0.01780338614322985,
+        0
+      ],
+      "world": [
+        0.6741383501880438,
+        1.3208341158665968,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        -1,
+        0
+      ],
+      "finger": "Thumb",
+      "segment": 3
+    },
+    {
+      "name": "LeftThumbTip",
+      "parent": 28,
+      "translation": [
+        0.016729252998303745,
+        0.010960478735837498,
+        0
+      ],
+      "world": [
+        0.6908676031863475,
+        1.3317945946024343,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "tip"
+    },
+    {
+      "name": "LeftUpperLeg",
+      "parent": 1,
+      "translation": [
+        0.078,
+        -0.027999999999999914,
+        0
+      ],
+      "world": [
+        0.078,
+        0.807,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "body"
+    },
+    {
+      "name": "LeftLowerLeg",
+      "parent": 30,
+      "translation": [
+        0.006000000000000005,
+        -0.35000000000000003,
+        0
+      ],
+      "world": [
+        0.084,
+        0.457,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "body"
+    },
+    {
+      "name": "LeftFoot",
+      "parent": 31,
+      "translation": [
+        0.001999999999999988,
+        -0.334,
+        0
+      ],
+      "world": [
+        0.086,
+        0.123,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "body"
+    },
+    {
+      "name": "LeftToe",
+      "parent": 32,
+      "translation": [
+        0.0,
+        -0.078,
+        0.1
+      ],
+      "world": [
+        0.086,
+        0.045,
+        0.1
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "tip"
+    },
+    {
+      "name": "RightShoulder",
+      "parent": 3,
+      "translation": [
+        -0.092,
+        0.08000000000000007,
+        0
+      ],
+      "world": [
+        -0.092,
+        1.25,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "body"
+    },
+    {
+      "name": "RightUpperArm",
+      "parent": 34,
+      "translation": [
+        -0.092,
+        0.0,
+        0
+      ],
+      "world": [
+        -0.184,
+        1.25,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "body"
+    },
+    {
+      "name": "RightLowerArm",
+      "parent": 35,
+      "translation": [
+        -0.22499999999999998,
+        0.0,
+        0
+      ],
+      "world": [
+        -0.409,
+        1.25,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "body"
+    },
+    {
+      "name": "RightHand",
+      "parent": 36,
+      "translation": [
+        -0.20600000000000002,
+        0.0,
+        0
+      ],
+      "world": [
+        -0.615,
+        1.25,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "hand"
+    },
+    {
+      "name": "RightIndex1",
+      "parent": 37,
+      "translation": [
+        -0.07999999999999996,
+        0.030000000000000027,
+        0
+      ],
+      "world": [
+        -0.695,
+        1.28,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        1,
+        0
+      ],
+      "finger": "Index",
+      "segment": 1
+    },
+    {
+      "name": "RightIndex2",
+      "parent": 38,
+      "translation": [
+        -0.03300000000000003,
+        0.0,
+        0
+      ],
+      "world": [
+        -0.728,
+        1.28,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        1,
+        0
+      ],
+      "finger": "Index",
+      "segment": 2
+    },
+    {
+      "name": "RightIndex3",
+      "parent": 39,
+      "translation": [
+        -0.02300000000000002,
+        0.0,
+        0
+      ],
+      "world": [
+        -0.751,
+        1.28,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        1,
+        0
+      ],
+      "finger": "Index",
+      "segment": 3
+    },
+    {
+      "name": "RightIndexTip",
+      "parent": 40,
+      "translation": [
+        -0.019000000000000017,
+        0.0,
+        0
+      ],
+      "world": [
+        -0.77,
+        1.28,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "tip"
+    },
+    {
+      "name": "RightMiddle1",
+      "parent": 37,
+      "translation": [
+        -0.08499999999999996,
+        0.006999999999999895,
+        0
+      ],
+      "world": [
+        -0.7,
+        1.257,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        1,
+        0
+      ],
+      "finger": "Middle",
+      "segment": 1
+    },
+    {
+      "name": "RightMiddle2",
+      "parent": 42,
+      "translation": [
+        -0.03700000000000003,
+        0.0,
+        0
+      ],
+      "world": [
+        -0.737,
+        1.257,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        1,
+        0
+      ],
+      "finger": "Middle",
+      "segment": 2
+    },
+    {
+      "name": "RightMiddle3",
+      "parent": 43,
+      "translation": [
+        -0.026000000000000023,
+        0.0,
+        0
+      ],
+      "world": [
+        -0.763,
+        1.257,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        1,
+        0
+      ],
+      "finger": "Middle",
+      "segment": 3
+    },
+    {
+      "name": "RightMiddleTip",
+      "parent": 44,
+      "translation": [
+        -0.020000000000000018,
+        0.0,
+        0
+      ],
+      "world": [
+        -0.783,
+        1.257,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "tip"
+    },
+    {
+      "name": "RightRing1",
+      "parent": 37,
+      "translation": [
+        -0.08099999999999996,
+        -0.016000000000000014,
+        0
+      ],
+      "world": [
+        -0.696,
+        1.234,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        1,
+        0
+      ],
+      "finger": "Ring",
+      "segment": 1
+    },
+    {
+      "name": "RightRing2",
+      "parent": 46,
+      "translation": [
+        -0.03400000000000003,
+        0.0,
+        0
+      ],
+      "world": [
+        -0.73,
+        1.234,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        1,
+        0
+      ],
+      "finger": "Ring",
+      "segment": 2
+    },
+    {
+      "name": "RightRing3",
+      "parent": 47,
+      "translation": [
+        -0.02400000000000002,
+        0.0,
+        0
+      ],
+      "world": [
+        -0.754,
+        1.234,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        1,
+        0
+      ],
+      "finger": "Ring",
+      "segment": 3
+    },
+    {
+      "name": "RightRingTip",
+      "parent": 48,
+      "translation": [
+        -0.019000000000000017,
+        0.0,
+        0
+      ],
+      "world": [
+        -0.773,
+        1.234,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "tip"
+    },
+    {
+      "name": "RightLittle1",
+      "parent": 37,
+      "translation": [
+        -0.06900000000000006,
+        -0.038000000000000034,
+        0
+      ],
+      "world": [
+        -0.684,
+        1.212,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        1,
+        0
+      ],
+      "finger": "Little",
+      "segment": 1
+    },
+    {
+      "name": "RightLittle2",
+      "parent": 50,
+      "translation": [
+        -0.027000000000000024,
+        0.0,
+        0
+      ],
+      "world": [
+        -0.7110000000000001,
+        1.212,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        1,
+        0
+      ],
+      "finger": "Little",
+      "segment": 2
+    },
+    {
+      "name": "RightLittle3",
+      "parent": 51,
+      "translation": [
+        -0.020000000000000018,
+        0.0,
+        0
+      ],
+      "world": [
+        -0.7310000000000001,
+        1.212,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        1,
+        0
+      ],
+      "finger": "Little",
+      "segment": 3
+    },
+    {
+      "name": "RightLittleTip",
+      "parent": 52,
+      "translation": [
+        -0.017000000000000015,
+        0.0,
+        0
+      ],
+      "world": [
+        -0.7480000000000001,
+        1.212,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "tip"
+    },
+    {
+      "name": "RightThumb1",
+      "parent": 37,
+      "translation": [
+        -0.02300000000000002,
+        0.03499999999999992,
+        0
+      ],
+      "world": [
+        -0.638,
+        1.285,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        1,
+        0
+      ],
+      "finger": "Thumb",
+      "segment": 1
+    },
+    {
+      "name": "RightThumb2",
+      "parent": 54,
+      "translation": [
+        -0.01583959550123959,
+        0.018030729723367056,
+        0
+      ],
+      "world": [
+        -0.6538395955012396,
+        1.303030729723367,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        1,
+        0
+      ],
+      "finger": "Thumb",
+      "segment": 2
+    },
+    {
+      "name": "RightThumb3",
+      "parent": 55,
+      "translation": [
+        -0.0202987546868042,
+        0.01780338614322985,
+        0
+      ],
+      "world": [
+        -0.6741383501880438,
+        1.3208341158665968,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "finger",
+      "flexionAxis": [
+        0,
+        1,
+        0
+      ],
+      "finger": "Thumb",
+      "segment": 3
+    },
+    {
+      "name": "RightThumbTip",
+      "parent": 56,
+      "translation": [
+        -0.016729252998303745,
+        0.010960478735837498,
+        0
+      ],
+      "world": [
+        -0.6908676031863475,
+        1.3317945946024343,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "tip"
+    },
+    {
+      "name": "RightUpperLeg",
+      "parent": 1,
+      "translation": [
+        -0.078,
+        -0.027999999999999914,
+        0
+      ],
+      "world": [
+        -0.078,
+        0.807,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "body"
+    },
+    {
+      "name": "RightLowerLeg",
+      "parent": 58,
+      "translation": [
+        -0.006000000000000005,
+        -0.35000000000000003,
+        0
+      ],
+      "world": [
+        -0.084,
+        0.457,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "body"
+    },
+    {
+      "name": "RightFoot",
+      "parent": 59,
+      "translation": [
+        -0.001999999999999988,
+        -0.334,
+        0
+      ],
+      "world": [
+        -0.086,
+        0.123,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "body"
+    },
+    {
+      "name": "RightToe",
+      "parent": 60,
+      "translation": [
+        0.0,
+        -0.078,
+        0.1
+      ],
+      "world": [
+        -0.086,
+        0.045,
+        0.1
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "tip"
+    },
+    {
+      "name": "FaceEyeLeft",
+      "parent": 5,
+      "translation": [
+        0.051,
+        0.010000000000000009,
+        0.129
+      ],
+      "world": [
+        0.051,
+        1.465,
+        0.129
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        0.001,
+        0.001,
+        0.001
+      ],
+      "kind": "face"
+    },
+    {
+      "name": "FaceEyeRight",
+      "parent": 5,
+      "translation": [
+        -0.051,
+        0.010000000000000009,
+        0.129
+      ],
+      "world": [
+        -0.051,
+        1.465,
+        0.129
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        0.001,
+        0.001,
+        0.001
+      ],
+      "kind": "face"
+    },
+    {
+      "name": "FaceArcLeft",
+      "parent": 5,
+      "translation": [
+        0.051,
+        0.010000000000000009,
+        0.134
+      ],
+      "world": [
+        0.051,
+        1.465,
+        0.134
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "face"
+    },
+    {
+      "name": "FaceArcRight",
+      "parent": 5,
+      "translation": [
+        -0.051,
+        0.010000000000000009,
+        0.134
+      ],
+      "world": [
+        -0.051,
+        1.465,
+        0.134
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "face"
+    },
+    {
+      "name": "FaceBrowLeft",
+      "parent": 5,
+      "translation": [
+        0.051,
+        0.04899999999999993,
+        0.13
+      ],
+      "world": [
+        0.051,
+        1.504,
+        0.13
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        0.001,
+        0.001,
+        0.001
+      ],
+      "kind": "face"
+    },
+    {
+      "name": "FaceBrowRight",
+      "parent": 5,
+      "translation": [
+        -0.051,
+        0.04899999999999993,
+        0.13
+      ],
+      "world": [
+        -0.051,
+        1.504,
+        0.13
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        0.001,
+        0.001,
+        0.001
+      ],
+      "kind": "face"
+    },
+    {
+      "name": "FaceSmile",
+      "parent": 5,
+      "translation": [
+        0,
+        -0.030000000000000027,
+        0.139
+      ],
+      "world": [
+        0,
+        1.425,
+        0.139
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ],
+      "kind": "face"
+    },
+    {
+      "name": "FaceMouthOpen",
+      "parent": 5,
+      "translation": [
+        0,
+        -0.030000000000000027,
+        0.139
+      ],
+      "world": [
+        0,
+        1.425,
+        0.139
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "scale": [
+        0.001,
+        0.001,
+        0.001
+      ],
+      "kind": "face"
+    }
+  ],
+  "materials": [
+    "Shell_Pearl",
+    "Joint_Graphite",
+    "Visor_Obsidian",
+    "LED_Cyan",
+    "Trim_Titanium",
+    "Torso_Pearl"
+  ],
+  "limitations": [
+    "Rigid-weighted robot shells; no collision solver",
+    "LED facial controls are not linguistically validated non-manual ISL markers",
+    "Not an exact sculpt of the concept image"
+  ]
+}

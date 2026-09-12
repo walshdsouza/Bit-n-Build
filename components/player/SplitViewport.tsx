@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import SignAvatar from "./SignAvatar";
+import NexaAvatar from "./NexaAvatar";
 import CwasaAvatar, { GlossTimelineEntry, CwasaAvatarHandle } from "./CwasaAvatar";
 import { SignPlan } from "@/lib/types";
 import { NMMTag } from "@/lib/sigmlEngine";
@@ -52,6 +53,8 @@ export default function SplitViewport({
   const [sourceVideoUrl, setSourceVideoUrl] = useState<string | null>(null);
   const [sourceType, setSourceType] = useState<"youtube" | "file" | null>(null);
   const [currentGloss, setCurrentGloss] = useState<string>("—");
+  // Falls back to the procedural rig if the NEXA model cannot be loaded.
+  const [nexaFailed, setNexaFailed] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const ytPlayerRef = useRef<any>(null);
@@ -303,13 +306,25 @@ export default function SplitViewport({
               playing={playing}
               className="w-full h-full"
             />
-          ) : (
-            /* ── Procedural Three.js avatar (offline fallback) ──────────── */
+          ) : nexaFailed ? (
+            /* ── Procedural avatar: offline fallback if the GLB won't load ─ */
             <SignAvatar
               plan={plan}
               currentTime={currentTime}
               playing={playing}
               label={plan ? undefined : currentGloss}
+            />
+          ) : (
+            /* ── NEXA rigged model, driven by the same pose solver ───────── */
+            <NexaAvatar
+              plan={plan}
+              currentTime={currentTime}
+              playing={playing}
+              label={plan ? undefined : currentGloss}
+              onError={(msg) => {
+                console.warn("[avatar] NEXA unavailable, using procedural rig:", msg);
+                setNexaFailed(true);
+              }}
             />
           )}
         </div>
