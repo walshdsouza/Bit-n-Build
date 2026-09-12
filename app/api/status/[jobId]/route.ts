@@ -3,9 +3,10 @@ import { jobStore } from "@/app/api/ingest/route";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { jobId: string } }
+  { params }: { params: Promise<{ jobId: string }> }
 ) {
-  const { jobId } = params;
+  const resolvedParams = await params;
+  const { jobId } = resolvedParams;
   const job = jobStore[jobId];
 
   if (!job) {

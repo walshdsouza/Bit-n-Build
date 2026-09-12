@@ -1,9 +1,10 @@
+/// <reference types="chrome" />
 // GestureSync AI — Background Service Worker (Manifest V3)
 
 const GESTURE_SYNC_API = "http://localhost:3000/api";
 
 // Listen for tab audio capture requests from popup
-chrome.runtime.onMessage.addListener((msg: { type: string; tabId?: number }, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg: { type: string; tabId?: number }, sender: chrome.runtime.MessageSender, sendResponse: (response?: any) => void) => {
   if (msg.type === "START_CAPTURE") {
     startAudioCapture(msg.tabId ?? sender.tab?.id ?? 0, sendResponse);
     return true; // keep channel open for async
@@ -64,8 +65,8 @@ async function sendChunkToPipeline(blob: Blob) {
     });
     const data = await res.json();
     // Broadcast jobId to all content scripts for live rendering
-    chrome.tabs.query({ url: "https://meet.google.com/*" }, (tabs) => {
-      tabs.forEach((tab) => {
+    chrome.tabs.query({ url: "https://meet.google.com/*" }, (tabs: chrome.tabs.Tab[]) => {
+      tabs.forEach((tab: chrome.tabs.Tab) => {
         if (tab.id) {
           chrome.tabs.sendMessage(tab.id, { type: "JOB_CREATED", jobId: data.jobId });
         }

@@ -14,17 +14,46 @@ export default function IngestionCard() {
     if (!url && !fileName) return;
     setLoading(true);
     try {
-      const body = url ? JSON.stringify({ url }) : new FormData();
-      await fetch("/api/ingest", {
+      let body: string | FormData;
+      let objectUrl: string | null = null;
+
+      if (url) {
+        body = JSON.stringify({ url });
+        sessionStorage.setItem("sourceVideoUrl", url);
+        sessionStorage.setItem("sourceType", "youtube");
+      } else {
+        body = new FormData();
+        const file = fileRef.current?.files?.[0];
+        if (file) {
+          body.append("file", file);
+          objectUrl = URL.createObjectURL(file);
+          sessionStorage.setItem("sourceVideoUrl", objectUrl);
+          sessionStorage.setItem("sourceType", "file");
+        }
+      }
+
+      const res = await fetch("/api/process-video", {
         method: "POST",
         headers: url ? { "Content-Type": "application/json" } : undefined,
-        body: url ? JSON.stringify({ url }) : body,
+        body,
       });
-    } catch {
-      /* mock — continue */
+
+      const data = await res.json();
+      console.log("Process Video Result:", data);
+
+      if (data.success) {
+        sessionStorage.setItem("processedTranscript", JSON.stringify(data));
+        setLoading(false);
+        router.push("/player/demo");
+      } else {
+        alert("Ingestion Failed: " + (data.error || "Unknown error"));
+        setLoading(false);
+      }
+    } catch (error: any) {
+      console.error("Ingestion failed:", error);
+      alert("Ingestion Failed: " + (error.message || String(error)));
+      setLoading(false);
     }
-    setLoading(false);
-    router.push("/player/demo");
   };
 
   return (

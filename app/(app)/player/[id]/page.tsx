@@ -1,13 +1,17 @@
 "use client";
-import { useState } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
 import SplitViewport from "@/components/player/SplitViewport";
 import Timeline from "@/components/player/Timeline";
 import GlossInspector from "@/components/player/GlossInspector";
 
-export default function PlayerPage({ params }: { params: { id: string } }) {
+export default function PlayerPage({ params }: { params: Promise<{ id: string }> }) {
+  const resolvedParams = use(params);
+  const id = resolvedParams.id;
   const [playing, setPlaying] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
 
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)] bg-[#060a0f]">
@@ -18,9 +22,11 @@ export default function PlayerPage({ params }: { params: { id: string } }) {
         </Link>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-on-surface truncate">
-            {params.id === "demo" ? "Demo Translation — TED Talk on Accessibility" : `Translation #${params.id}`}
+            {id === "demo" ? "Demo Translation — TED Talk on Accessibility" : `Translation #${id}`}
           </p>
-          <p className="text-xs text-on-surface-variant">0:28 · English → ASL · 6 gloss rows</p>
+          <p className="text-xs text-on-surface-variant">
+            {duration > 0 ? `${Math.round(duration)}s` : "0:28"} · English → ASL
+          </p>
         </div>
         {/* Toggle gloss inspector */}
         <button
@@ -42,14 +48,26 @@ export default function PlayerPage({ params }: { params: { id: string } }) {
       <div className="flex flex-1 overflow-hidden">
         {/* Player area */}
         <div className="flex flex-col flex-1 overflow-hidden">
-          <SplitViewport />
-          <Timeline playing={playing} onPlayPause={() => setPlaying(!playing)} />
+          <SplitViewport
+            playing={playing}
+            currentTime={currentTime}
+            onTimeUpdate={setCurrentTime}
+            onDurationChange={setDuration}
+            onPlayPause={() => setPlaying((p) => !p)}
+          />
+          <Timeline
+            playing={playing}
+            onPlayPause={() => setPlaying((p) => !p)}
+            currentTime={currentTime}
+            duration={duration}
+            onSeek={setCurrentTime}
+          />
         </div>
 
         {/* Gloss inspector panel */}
         {inspectorOpen && (
           <div className="w-[280px] flex-shrink-0 hidden md:flex">
-            <GlossInspector />
+            <GlossInspector currentTime={currentTime} />
           </div>
         )}
       </div>
