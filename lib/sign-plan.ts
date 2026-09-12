@@ -13,6 +13,7 @@ import {
   GlossRow,
   NMMTag,
   ProsodyFrame,
+  SignEntry,
   SignLanguageCode,
   SignPlan,
   SignPlanItem,
@@ -41,6 +42,13 @@ function prosodyAt(frames: ProsodyFrame[] | undefined, t: number): ProsodyFrame 
 }
 
 /**
+ * Below this, a sign is a flicker rather than something a viewer can read.
+ * Speech dense enough to demand faster signing makes the avatar lag instead —
+ * which is what a human interpreter does too.
+ */
+const MIN_SIGN_DURATION = 0.13;
+
+/**
  * Expands one gloss row into timed sign items.
  *
  * Signs are laid out sequentially inside the row's [startTime, endTime]
@@ -48,12 +56,21 @@ function prosodyAt(frames: ProsodyFrame[] | undefined, t: number): ProsodyFrame 
  * keeping the avatar synchronised with the source speaker even when the
  * nominal articulation times don't add up to the spoken duration.
  */
+/** A resolved sign with a relative duration, not yet placed on the timeline. */
+interface PendingSign {
+  gloss: string;
+  duration: number;
+  entry: SignEntry | null;
+  fingerspell?: string;
+  emphasis: number;
+}
+
 function expandRow(
   row: GlossRow,
   lang: SignLanguageCode,
   secondsPerSign: number,
   prosody: ProsodyFrame[] | undefined,
-): SignPlanItem[] {
+): PendingSign[] {
   const lemmas = row.gloss.split(/\s+/).filter(Boolean);
   if (!lemmas.length) return [];
 
@@ -91,26 +108,21 @@ function expandRow(
 
   if (!units.length) return [];
 
-  // 2. Fit the sequence into the row's time window.
+  // 2. Fit the sequence into the row's time window. Durations are returned
+  //    relative; buildSignPlan places them on the global timeline so that a row
+  //    which cannot compress far enough pushes later rows later rather than
+  //    overlapping them.
   const window = Math.max(row.endTime - row.startTime, 0.4);
   const total = units.reduce((s, u) => s + u.dur, 0);
   const scale = total > 0 ? window / total : 1;
 
-  let cursor = row.startTime;
-  return units.map((u) => {
-    const dur = u.dur * scale;
-    const item: SignPlanItem = {
-      gloss: u.gloss,
-      startTime: Math.round(cursor * 1000) / 1000,
-      endTime: Math.round((cursor + dur) * 1000) / 1000,
-      entry: u.entry,
-      fingerspell: u.fingerspell,
-      nmm: [],
-      emphasis,
-    };
-    cursor += dur;
-    return item;
-  });
+  return units.map((u) => ({
+    gloss: u.gloss,
+    duration: Math.max(u.dur * scale, MIN_SIGN_DURATION),
+    entry: u.entry,
+    fingerspell: u.fingerspell,
+    emphasis,
+  }));
 }
 
 /** Attaches NMMs to whichever sign is active at each marker's timestamp. */
@@ -162,14 +174,38 @@ function attachNmm(
 export function buildSignPlan(rows: GlossRow[], opts: PlanOptions): SignPlan {
   const profile = getProfile(opts.lang);
 
-  const items = rows.flatMap((row) =>
-    expandRow(row, profile.code, profile.secondsPerSign, opts.prosody),
-  );
+  // Lay every row out against one monotonic cursor. A row normally starts at
+  // its own timestamp, but if the previous row overran (speech too dense to
+  // sign in the time available) the cursor carries that lag forward instead of
+  // producing overlapping signs.
+  const items: SignPlanItem[] = [];
+  let cursor = 0;
+
+  for (const row of rows) {
+    const pending = expandRow(row, profile.code, profile.secondsPerSign, opts.prosody);
+    if (!pending.length) continue;
+
+    cursor = Math.max(cursor, row.startTime);
+    for (const p of pending) {
+      items.push({
+        gloss: p.gloss,
+        startTime: Math.round(cursor * 1000) / 1000,
+        endTime: Math.round((cursor + p.duration) * 1000) / 1000,
+        entry: p.entry,
+        fingerspell: p.fingerspell,
+        nmm: [],
+        emphasis: p.emphasis,
+      });
+      cursor += p.duration;
+    }
+  }
 
   attachNmm(items, rows, profile.nmmSet, opts.prosody);
 
-  const duration =
-    opts.duration ?? (items.length ? items[items.length - 1].endTime : 0);
+  const lastEnd = items.length ? items[items.length - 1].endTime : 0;
+  // Never report a duration shorter than the signing actually takes, or the
+  // tail of the translation would be unreachable on the timeline.
+  const duration = Math.max(opts.duration ?? 0, lastEnd);
 
   return {
     lang: profile.code,

@@ -59,12 +59,25 @@ const VERBS = new Set([
  * ---------------------------------------------------------------- */
 
 function tokenize(text: string): string[] {
-  return text
-    .toUpperCase()
-    .replace(/[^A-Z0-9'\s-]/g, " ")
-    .replace(/'(S|RE|VE|LL|D|M|T)\b/g, "")
-    .split(/\s+/)
-    .filter(Boolean);
+  if (typeof text !== "string" || !text) return [];
+  return (
+    text
+      .toUpperCase()
+      .replace(/[^A-Z0-9'\s-]/g, " ")
+      // Expand negative contractions BEFORE apostrophe suffixes are stripped.
+      // Without this, "DON'T" loses its "'T" and becomes "DON" — silently
+      // dropping the negation and inverting the meaning of the sentence.
+      .replace(/\bCAN'T\b/g, " CAN NOT ")
+      .replace(/\bWON'T\b/g, " WILL NOT ")
+      .replace(/\bSHAN'T\b/g, " SHALL NOT ")
+      .replace(/\bAIN'T\b/g, " IS NOT ")
+      .replace(/([A-Z]+)N'T\b/g, "$1 NOT ")
+      // Remaining clitics carry no sign: possessive 'S, copula 'RE/'M/'S, etc.
+      .replace(/'(S|RE|VE|LL|D|M)\b/g, "")
+      .replace(/'/g, "")
+      .split(/\s+/)
+      .filter(Boolean)
+  );
 }
 
 /**
@@ -75,33 +88,44 @@ export function glossByRules(text: string, profile: SignLanguageProfile): string
   const g = profile.grammar;
   const drop = new Set(g.dropWords.map((w) => w.toUpperCase()));
 
-  const isQuestion = /\?\s*$/.test(text.trim());
-  const tokens = tokenize(text);
+  const source = typeof text === "string" ? text : "";
+  const isQuestion = /\?\s*$/.test(source.trim());
+  const tokens = tokenize(source);
 
-  // 1. Tense detection BEFORE we strip auxiliaries.
-  let timeMarker: string | null = null;
-  if (g.timeMarkerFirst) {
-    const hasPast = tokens.some((t) => PAST_TENSE[t] || /^[A-Z]+ED$/.test(t));
-    const hasFuture = tokens.some((t) => t === "WILL" || t === "SHALL" || t === "GOING");
-    const hasExplicitTime = tokens.some((t) => TIME_WORDS.has(t));
-    if (!hasExplicitTime) {
-      if (hasFuture) timeMarker = "FUTURE";
-      else if (hasPast) timeMarker = "BEFORE";
-    }
-  }
-
-  // 2. Normalise: de-inflect verbs, map pronouns, drop function words.
+  // 1. Normalise: de-inflect verbs, map pronouns, drop function words.
+  //
+  // Every de-inflection rule is gated on the stem being a KNOWN VERB. Matching
+  // on the suffix alone wrecks ordinary nouns: "NEED"/"SEED"/"BED" all end in
+  // -ED, and "KING"/"THING" all end in -ING.
+  let sawPast = false;
+  let sawFuture = false;
   const out: string[] = [];
+
   for (const raw of tokens) {
     let t = raw;
-    if (PAST_TENSE[t]) t = PAST_TENSE[t];
-    else if (/^[A-Z]{4,}ED$/.test(t)) t = t.slice(0, -2);
-    else if (/^[A-Z]{4,}ING$/.test(t)) t = t.slice(0, -3);
-    // Third-person singular -s: "CALLS" → "CALL". Only strip when the base is a
-    // known verb, so plural nouns like GLASS/NEWS are left alone.
-    else if (/^[A-Z]{3,}S$/.test(t) && !t.endsWith("SS") && VERBS.has(t.slice(0, -1))) {
+
+    if (PAST_TENSE[t]) {
+      t = PAST_TENSE[t];
+      sawPast = true;
+    } else if (/^[A-Z]{4,}ED$/.test(t) && VERBS.has(t.slice(0, -2))) {
+      t = t.slice(0, -2); // WALKED → WALK
+      sawPast = true;
+    } else if (
+      /^[A-Z]{4,}ED$/.test(t) &&
+      VERBS.has(t.slice(0, -1)) &&
+      // Only for verbs whose stem ends consonant+E (LIVE→LIVED). Guards against
+      // SEED→SEE and FEED→FEE, where the stem ends in a vowel pair.
+      /[^AEIOU]E$/.test(t.slice(0, -1))
+    ) {
       t = t.slice(0, -1);
+      sawPast = true;
+    } else if (/^[A-Z]{4,}ING$/.test(t) && VERBS.has(t.slice(0, -3))) {
+      t = t.slice(0, -3); // WALKING → WALK
+    } else if (/^[A-Z]{3,}S$/.test(t) && !t.endsWith("SS") && VERBS.has(t.slice(0, -1))) {
+      t = t.slice(0, -1); // CALLS → CALL
     }
+
+    if (t === "WILL" || t === "SHALL" || raw === "GOING") sawFuture = true;
 
     if (PRONOUNS[t]) t = PRONOUNS[t];
     if (drop.has(t)) continue;
@@ -112,6 +136,15 @@ export function glossByRules(text: string, profile: SignLanguageProfile): string
     if (NEGATIONS.has(t)) t = "NOT";
 
     if (t) out.push(t);
+  }
+
+  // 2. Tense is not inflected on the verb in these languages; it is carried by
+  //    a fronted time marker instead. An explicit time word in the sentence
+  //    always wins over the inferred one.
+  let timeMarker: string | null = null;
+  if (g.timeMarkerFirst && !out.some((t) => TIME_WORDS.has(t))) {
+    if (sawFuture) timeMarker = "FUTURE";
+    else if (sawPast) timeMarker = "BEFORE";
   }
 
   // 3. Pull out question words and negation for repositioning.
@@ -170,14 +203,10 @@ export function glossByRules(text: string, profile: SignLanguageProfile): string
     body = [...body, ...timeWords];
   }
 
-  // 7. Negation placement.
-  if (negations.length) {
-    if (g.negationAfterVerb) {
-      body.push("NOT"); // ISL/BSL: post-verbal particle
-    } else {
-      body.push("NOT"); // ASL: particle + headshake NMM added downstream
-    }
-  }
+  // 7. Negation. Both grammars place the NOT particle clause-finally (after the
+  //    verb, which SOV has already moved to the end); they differ in that ASL
+  //    leans on the headshake NMM, added downstream in deriveNMM().
+  if (negations.length) body.push("NOT");
 
   // 8. Question word placement.
   if (questions.length) {

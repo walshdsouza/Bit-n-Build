@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GlossResponse, TranscriptSegment } from "@/lib/types";
+import { GlossResponse } from "@/lib/types";
+import { normalizeSegments } from "@/lib/segments";
 import { generateGloss } from "@/lib/gloss-engine";
 import { analyzeProsody } from "@/lib/prosody";
 import { getProfile, isSupported } from "@/lib/sign-languages";
@@ -15,14 +16,13 @@ import { getProfile, isSupported } from "@/lib/sign-languages";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { segments, lang } = body as {
-      segments?: TranscriptSegment[];
-      lang?: string;
-    };
+    const { lang } = body as { lang?: string };
 
-    if (!Array.isArray(segments) || segments.length === 0) {
+    const segments = normalizeSegments((body as { segments?: unknown }).segments);
+
+    if (segments.length === 0) {
       return NextResponse.json(
-        { error: "Provide a non-empty `segments` array." },
+        { error: "Provide a non-empty `segments` array, each with a `text` string." },
         { status: 400 },
       );
     }
