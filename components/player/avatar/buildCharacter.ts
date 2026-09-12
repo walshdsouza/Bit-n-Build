@@ -36,16 +36,16 @@ export interface CharacterPalette {
 }
 
 export const DEFAULT_PALETTE: CharacterPalette = {
-  shell: 0xf2eee8,
-  shellWarm: 0xf0e4d8,
-  carbon: 0x12161b,
-  carbonGloss: 0x1b2129,
-  glow: 0x4cd7f6,
-  hair: 0x2a1c15,
-  sclera: 0xf7f5f1,
-  iris: 0x6b4f36,
-  lip: 0xc08476,
-  brow: 0x241a14,
+  shell: 0xede8e2,        // warm off-white ceramic panels
+  shellWarm: 0xc8997a,    // realistic warm skin tone for face and hands
+  carbon: 0x0b0f14,       // deep near-black undersuit
+  carbonGloss: 0x141c26,  // dark metallic armour plates
+  glow: 0x00e5ff,         // vivid cyan — brighter so bloom really pops
+  hair: 0x140c08,         // very dark espresso brown
+  sclera: 0xf4f2ee,       // off-white eyes
+  iris: 0x3d7a9b,         // steel-blue iris
+  lip: 0xa06050,          // natural muted rose lip
+  brow: 0x18100a,         // near-black brow matching hair
 };
 
 /* ---------------------------------------------------------------- *
@@ -92,79 +92,82 @@ function makeMaterials(p: CharacterPalette) {
     return m;
   };
 
-  // Ceramic shell: high clearcoat over a near-white base is what reads as
-  // polished hard-surface rather than plastic.
+  // Ceramic shell: high clearcoat over a warm off-white base.
+  // Higher clearcoat + lower roughness = sharper specular highlights.
   const shell = track(
     new THREE.MeshPhysicalMaterial({
       color: p.shell,
-      roughness: 0.26,
+      roughness: 0.18,
       metalness: 0.0,
       clearcoat: 1.0,
-      clearcoatRoughness: 0.07,
-      reflectivity: 0.6,
+      clearcoatRoughness: 0.04,
+      reflectivity: 0.72,
     }),
   );
 
+  // Face/hand skin: slightly warmer and softer than the shell panels.
   const shellWarm = track(
     new THREE.MeshPhysicalMaterial({
       color: p.shellWarm,
-      roughness: 0.3,
+      roughness: 0.52,
       metalness: 0.0,
-      clearcoat: 0.9,
-      clearcoatRoughness: 0.12,
+      clearcoat: 0.35,
+      clearcoatRoughness: 0.25,
+      sheen: 0.3,
+      sheenColor: new THREE.Color(0xffccaa),
     }),
   );
 
   const carbon = track(
     new THREE.MeshPhysicalMaterial({
       color: p.carbon,
-      roughness: 0.72,
-      metalness: 0.05,
-      sheen: 0.4,
-      sheenRoughness: 0.8,
-      sheenColor: new THREE.Color(0x3a4654),
+      roughness: 0.68,
+      metalness: 0.08,
+      sheen: 0.55,
+      sheenRoughness: 0.75,
+      sheenColor: new THREE.Color(0x2a3a4e),
     }),
   );
 
   const carbonGloss = track(
     new THREE.MeshPhysicalMaterial({
       color: p.carbonGloss,
-      roughness: 0.22,
-      metalness: 0.35,
-      clearcoat: 0.9,
-      clearcoatRoughness: 0.1,
+      roughness: 0.15,
+      metalness: 0.45,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.06,
     }),
   );
 
-  // Emissive trim. Kept above 1.0 so the bloom pass picks it up.
+  // Emissive trim — increased intensity so the bloom pass picks it up clearly.
   const glow = track(
     new THREE.MeshStandardMaterial({
-      color: 0x0a1a20,
+      color: 0x040e12,
       emissive: new THREE.Color(p.glow),
-      emissiveIntensity: 2.6,
-      roughness: 0.3,
+      emissiveIntensity: 3.2,
+      roughness: 0.2,
       metalness: 0,
     }),
   );
 
   const glowSoft = track(
     new THREE.MeshStandardMaterial({
-      color: 0x0a1a20,
+      color: 0x040e12,
       emissive: new THREE.Color(p.glow),
-      emissiveIntensity: 1.5,
-      roughness: 0.4,
+      emissiveIntensity: 1.8,
+      roughness: 0.35,
     }),
   );
 
   const hair = track(
     new THREE.MeshPhysicalMaterial({
       color: p.hair,
-      roughness: 0.34,
-      metalness: 0.08,
-      sheen: 0.9,
-      sheenColor: new THREE.Color(0x7a5641),
-      clearcoat: 0.4,
-      clearcoatRoughness: 0.25,
+      roughness: 0.28,
+      metalness: 0.06,
+      sheen: 1.0,
+      sheenColor: new THREE.Color(0x6a4030),
+      clearcoat: 0.5,
+      clearcoatRoughness: 0.20,
     }),
   );
 

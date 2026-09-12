@@ -11,6 +11,14 @@ import { SignLanguageCode, SignEntry, HandShape } from "../types";
 import { getProfile } from "../sign-languages";
 import { ASL_DICTIONARY } from "./asl";
 import { ISL_DICTIONARY } from "./isl";
+import islDataset from "../../data/datasets/isl_dictionary.json";
+
+// Merge the downloaded ISL dataset into the hardcoded ISL dictionary
+for (const entry of (islDataset as unknown as SignEntry[])) {
+  if (entry && entry.gloss && !ISL_DICTIONARY.has(entry.gloss)) {
+    ISL_DICTIONARY.set(entry.gloss, entry);
+  }
+}
 
 const DICTIONARIES: Partial<Record<SignLanguageCode, Map<string, SignEntry>>> = {
   ASL: ASL_DICTIONARY,

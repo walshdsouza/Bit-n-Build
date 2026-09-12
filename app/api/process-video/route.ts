@@ -128,11 +128,13 @@ export async function POST(req: NextRequest) {
       const pythonScriptPath = path.join(process.cwd(), 'scripts', 'get_youtube_transcript.py');
       
       const cmds = [
-        'python', 
-        'py', 
+        // Real Python 3.11 install path (Windows Store/Alias)
+        'C:\\Users\\soham\\AppData\\Local\\Microsoft\\WindowsApps\\python3.11.exe',
+        'C:\\Users\\soham\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe',
+        'C:\\Users\\WALSH\\AppData\\Local\\Programs\\Python\\Python313\\python.exe',
+        'python',
+        'py',
         'python3',
-        // Fallback for Windows Store Python if PATH is completely broken in the terminal
-        path.join(process.env.LOCALAPPDATA || 'C:\\Users\\' + (process.env.USERNAME || 'soham') + '\\AppData\\Local', 'Microsoft', 'WindowsApps', 'python.exe')
       ];
       let stdout = '';
       let stderr = '';
@@ -143,10 +145,19 @@ export async function POST(req: NextRequest) {
           const result = await new Promise<{stdout: string, stderr: string}>((resolve, reject) => {
             execFile(cmd, [pythonScriptPath, videoId], { 
               encoding: 'utf8',
-              shell: true,
               env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
             }, (error, out, err) => {
-              if (error) reject(error);
+              if (error) {
+                // The python script exits with code 1 if it fails to fetch (e.g. no captions).
+                // If we have valid JSON in stdout, it's a handled application error, not a python execution failure.
+                try {
+                  const data = JSON.parse(out);
+                  if (data && typeof data.success === 'boolean') {
+                    return resolve({stdout: out, stderr: err});
+                  }
+                } catch (_) {}
+                reject(error);
+              }
               else resolve({stdout: out, stderr: err});
             });
           });

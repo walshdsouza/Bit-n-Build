@@ -61,24 +61,39 @@ const v = (x: number, y: number, z: number): Vec3 => ({ x, y, z });
  * Articulatory tables
  * ---------------------------------------------------------------- */
 
-/** Body locations in avatar-local space. Origin at hips, y-up, +z toward viewer. */
+/**
+ * Body locations in avatar-local space.
+ * Origin at hips, y-up, +z toward viewer (toward the camera).
+ *
+ * Calibration notes:
+ *  - Shoulder joints sit at y≈1.36, x=±0.175 (see _shoulderR/_shoulderL in SignAvatar).
+ *  - All face targets need z≥0.16 to be comfortably in front of the face mesh.
+ *  - neutral_space is the large signing zone directly in front of the chest
+ *    (roughly 15–45 cm forward, between waist and chin height).
+ *  - x values follow the DOMINANT hand convention (right-hand = positive x);
+ *    the solver mirrors for the non-dominant side.
+ */
 const LOCATION_POINTS: Record<BodyLocation, Vec3> = {
-  head: v(0.0, 1.62, 0.06),
-  forehead: v(0.06, 1.66, 0.12),
-  eyes: v(0.06, 1.60, 0.14),
-  nose: v(0.03, 1.56, 0.16),
-  mouth: v(0.04, 1.51, 0.15),
-  chin: v(0.05, 1.46, 0.14),
-  cheek: v(0.11, 1.54, 0.10),
-  neck: v(0.0, 1.40, 0.10),
-  shoulders: v(0.16, 1.34, 0.06),
-  chest: v(0.05, 1.22, 0.14),
-  stomach: v(0.04, 1.02, 0.14),
-  neutral_space: v(0.20, 1.12, 0.28),
-  shoulder_l: v(-0.20, 1.34, 0.06),
-  shoulder_r: v(0.20, 1.34, 0.06),
-  // Against the weak hand — the anchor for two-handed ISL/BSL fingerspelling.
-  palm_weak: v(-0.06, 1.14, 0.30),
+  // ── Face / head area ──────────────────────────────────────────────────────
+  head:        v(0.00, 1.64, 0.16),
+  forehead:    v(0.05, 1.70, 0.18),
+  eyes:        v(0.05, 1.63, 0.18),
+  nose:        v(0.02, 1.57, 0.20),
+  mouth:       v(0.03, 1.52, 0.19),
+  chin:        v(0.03, 1.47, 0.18),
+  cheek:       v(0.13, 1.57, 0.16),
+  neck:        v(0.00, 1.42, 0.14),
+  // ── Torso ─────────────────────────────────────────────────────────────────
+  shoulders:   v(0.18, 1.38, 0.14),  // near the collar-bone — a common anchor
+  chest:       v(0.06, 1.26, 0.22),  // mid-sternum, clearly forward of body
+  stomach:     v(0.05, 1.04, 0.20),
+  // ── Signing space (the main articulation zone) ────────────────────────────
+  neutral_space: v(0.22, 1.20, 0.32), // forearm's length in front, waist-chest height
+  // ── Side anchors ──────────────────────────────────────────────────────────
+  shoulder_l:  v(-0.22, 1.38, 0.14),
+  shoulder_r:  v( 0.22, 1.38, 0.14),
+  // Against the weak hand (two-handed ISL/BSL fingerspelling base).
+  palm_weak:   v(-0.08, 1.16, 0.36),
 };
 
 /** Direction unit vectors. */
@@ -136,10 +151,25 @@ function wristRotation(h: HandConfig, mirror: boolean): Vec3 {
   const d = DIR_VECTORS[h.extFingerDir];
   const p = DIR_VECTORS[h.palmOr as ExtFingerDir] ?? DIR_VECTORS.o;
 
-  // Point the hand along `d`, then roll so the palm faces `p`.
-  const pitch = Math.asin(Math.max(-1, Math.min(1, d.y))) - Math.PI / 2;
+  // Pitch: angle in the YZ plane from +Y to d.
+  // atan2(d.z, d.y) correctly gives:
+  //   dir:u  (0, 1, 0)  → 0        (no rotation, fingers stay up)
+  //   dir:o  (0, 0, 1)  → +π/2    (tilt fingers toward viewer)
+  //   dir:d  (0,-1, 0)  → ±π      (fingers point down)
+  //   dir:i  (0, 0,-1)  → -π/2    (tilt fingers away from viewer)
+  // The old formula (asin(d.y) - π/2) had the wrong sign for all non-vertical directions.
+  const pitch = Math.atan2(d.z, d.y);
+
+  // Yaw: horizontal azimuth of d in the XZ plane.
   const yaw = Math.atan2(d.x, d.z);
-  const roll = Math.atan2(p.x, p.y);
+
+  // Roll: palm facing direction around the finger axis.
+  // atan2(-p.x, p.z) maps:
+  //   palm:o  (0, 0, 1)  → 0      (palm toward viewer — default, no roll)
+  //   palm:i  (0, 0,-1)  → ±π    (palm away from viewer)
+  //   palm:l  (-1,0, 0)  → +π/2  (palm faces signer's left)
+  //   palm:r  (1, 0, 0)  → -π/2  (palm faces signer's right)
+  const roll = Math.atan2(-p.x, p.z);
 
   return v(pitch, mirror ? -yaw : yaw, mirror ? -roll : roll);
 }
@@ -232,19 +262,24 @@ export function solveFace(nmm: string | undefined, intensity = 0.7, t = 0): Face
   }
 }
 
-/** Hands rest close to the body at waist height, ready to move into signing space. */
+/**
+ * Neutral signing rest pose.
+ * Hands hang slightly in front of the hips with fingers gently curled —
+ * the natural position between signs for a standing interpreter.
+ * z=0.26 keeps them comfortably visible without over-reaching.
+ */
 const REST_RIGHT: HandPose = {
-  pos: v(0.19, 0.97, 0.14),
-  rot: v(-0.45, 0, 0.1),
-  curl: [0.3, 0.28, 0.28, 0.28, 0.28],
-  spread: 0.2,
+  pos: v(0.20, 1.04, 0.26),
+  rot: v(-0.30, 0.10, 0.10),
+  curl: [0.25, 0.22, 0.22, 0.22, 0.22],
+  spread: 0.18,
   visible: true,
 };
 
 const REST_LEFT: HandPose = {
   ...REST_RIGHT,
-  pos: v(-0.19, 0.97, 0.14),
-  rot: v(-0.45, 0, -0.1),
+  pos: v(-0.20, 1.04, 0.26),
+  rot: v(-0.30, -0.10, -0.10),
 };
 
 export function restPose(): AvatarPose {
@@ -283,11 +318,13 @@ export function solvePose(item: SignPlanItem | null, t: number): AvatarPose {
   if (!item?.entry) return restPose();
 
   const entry = item.entry;
-  const emphasis = 0.85 + item.emphasis * 0.3; // prosody scales sign size
+  // Prosody emphasis slightly enlarges the sign — scale uniformly so the hand
+  // stays on the correct body location rather than drifting laterally.
+  const emphasis = 0.90 + item.emphasis * 0.20;
   const right = solveHand(entry.dominant, entry.movement, t, false);
 
-  // Emphasis pushes the sign further from the body.
-  right.pos.x *= emphasis;
+  // Scale z (depth) only — keeps the hand on the correct body plane
+  // while still making emphatic signs feel bigger.
   right.pos.z *= emphasis;
 
   let left: HandPose;

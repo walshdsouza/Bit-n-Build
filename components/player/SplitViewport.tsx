@@ -1,7 +1,9 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import SignAvatar from "./SignAvatar";
+import CwasaAvatar, { GlossTimelineEntry, CwasaAvatarHandle } from "./CwasaAvatar";
 import { SignPlan } from "@/lib/types";
+import { NMMTag } from "@/lib/sigmlEngine";
 
 declare global {
   interface Window {
@@ -20,6 +22,8 @@ interface SplitViewportProps {
   plan?: SignPlan | null;
   /** Target sign language label for the source badges. */
   lang?: string;
+  /** Use the CWASA WebGL avatar (requires internet for allcsa.js). Falls back to procedural. */
+  useCwasa?: boolean;
 }
 
 function getYouTubeId(url: string): string | null {
@@ -35,15 +39,45 @@ export default function SplitViewport({
   onPlayPause,
   plan = null,
   lang = "ASL",
+  useCwasa = false,
 }: SplitViewportProps) {
   const [splitPos, setSplitPos] = useState(50);
   const [sourceVideoUrl, setSourceVideoUrl] = useState<string | null>(null);
   const [sourceType, setSourceType] = useState<"youtube" | "file" | null>(null);
   const [currentGloss, setCurrentGloss] = useState<string>("—");
-  
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const ytPlayerRef = useRef<any>(null);
   const isSeekingRef = useRef<boolean>(false);
+  const cwasaRef = useRef<CwasaAvatarHandle>(null);
+
+  // Derive a GlossTimelineEntry[] from the SignPlan so CwasaAvatar knows when
+  // to trigger each sign segment.  We do this with useMemo-equivalent logic
+  // (recomputed only when plan changes) using a ref + effect.
+  const [glossTimeline, setGlossTimeline] = useState<GlossTimelineEntry[]>([]);
+
+  useEffect(() => {
+    if (!plan?.items.length) {
+      setGlossTimeline([]);
+      return;
+    }
+    const tl: GlossTimelineEntry[] = plan.items.map((item) => {
+      // Determine NMM from the first NMM tag in the item.
+      let nmm: NMMTag = "neutral";
+      if (item.nmm?.length) {
+        const raw = item.nmm[0].emotion.toLowerCase();
+        if (raw.includes("question") || raw.includes("wh")) nmm = "wh-question";
+        else if (raw.includes("happy") || raw.includes("smile")) nmm = "smile";
+        else if (raw.includes("negat") || raw.includes("headshake")) nmm = "negation";
+        else if (raw.includes("topic")) nmm = "topic";
+      }
+      const gloss = item.fingerspell
+        ? item.fingerspell
+        : item.gloss;
+      return { startTime: item.startTime, gloss, nmm };
+    });
+    setGlossTimeline(tl);
+  }, [plan]);
 
   // Read source from sessionStorage
   useEffect(() => {
@@ -245,18 +279,30 @@ export default function SplitViewport({
         </div>
       </div>
 
-      {/* Right pane — 3D signing avatar */}
+      {/* Right pane — signing avatar */}
       <div className="flex-1 bg-[#060a0f] flex flex-col relative overflow-hidden">
         <div className="absolute inset-0 bg-blueprint-cyan opacity-40" />
         <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-72 h-72 bg-primary/10 blur-3xl rounded-full pointer-events-none" />
 
         <div className="relative z-10 flex-1 min-h-0">
-          <SignAvatar
-            plan={plan}
-            currentTime={currentTime}
-            playing={playing}
-            label={plan ? undefined : currentGloss}
-          />
+          {useCwasa ? (
+            /* ── CWASA WebGL avatar ─────────────────────────────────────── */
+            <CwasaAvatar
+              ref={cwasaRef}
+              glossTimeline={glossTimeline}
+              currentTime={currentTime}
+              playing={playing}
+              className="w-full h-full"
+            />
+          ) : (
+            /* ── Procedural Three.js avatar (offline fallback) ──────────── */
+            <SignAvatar
+              plan={plan}
+              currentTime={currentTime}
+              playing={playing}
+              label={plan ? undefined : currentGloss}
+            />
+          )}
         </div>
 
         {!plan && (
