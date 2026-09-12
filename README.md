@@ -42,7 +42,7 @@ The web app currently uses **English input and ASL output**. It is a prototype w
 | YouTube imports | Retrieve timed captions through Supadata, with generated transcription as a fallback. |
 | Media uploads | Extract and transcribe speech from video or audio files. |
 | Tab audio capture | Record audio from a browser tab, review it, then create a translation. |
-| Live Meetings | Share a meeting tab's audio for incoming captions and ASL playback. |
+| Live Meetings | Translate a meeting tab, your microphone, or both into captions and ASL playback. |
 | Playback controls | Play, pause, seek, replay, and choose 0.5×, 1×, 1.5× or 2× speed. |
 | Transcript editing | Inspect the text behind a segment and regenerate its signing plan. |
 | Device saves | Retain the transcript, edits, signing plan, playback position and uploaded media in IndexedDB. |
@@ -136,12 +136,13 @@ Only the shared audio is recorded. Screen video is not uploaded. Capture stops a
 
 ### Follow a live meeting
 
-1. Open the meeting in another tab in desktop Chrome or Edge.
-2. Go to **Live Meetings** and select **Start live captions**.
-3. Choose the meeting tab with **Share tab audio** enabled.
-4. Keep UNMUTE beside your meeting to follow incoming captions and signs. Select **Stop sharing** when finished.
+1. Open **Live Meetings** and choose **Meeting tab** for other participants, or **My microphone** to translate your own voice without a meeting.
+2. For a meeting, select **Include my microphone** if your own words should also be translated.
+3. Select **Start live captions** and allow the requested audio access. For tab sharing, use desktop Chrome or Edge and enable **Share tab audio**.
+4. Check the audio level indicator, then speak or play the meeting audio. Captions and signs appear after a few seconds.
+5. Keep UNMUTE beside your meeting. Select **Stop sharing** when finished; both tab and microphone access are released.
 
-Live captions arrive after five-second audio windows and transcription processing. The app captures audio played by the shared tab, not your own microphone. Recent captions remain on the page until you start again or leave.
+Live captions arrive after five-second audio windows and transcription processing. Microphone access is requested only when explicitly selected. The screen distinguishes silence from transcription delays and provides a retry on failure. Signing waits for the avatar to load and pauses while the tab is hidden, then resumes when you return. Recent captions remain on the page until you start again or leave.
 
 ## How it works
 
@@ -275,7 +276,8 @@ npx vercel deploy --prod
 | YouTube import is not configured | Set `SUPADATA_API_KEY` on the server and redeploy, or add a personal Supadata key in Settings. |
 | A video cannot be imported | Check that it is public and has usable English speech/captions. Provider plans, quotas and access restrictions still apply. Try tab audio capture or a file upload. |
 | Transcription key error | Check the selected provider's key. A saved personal key takes precedence over the server key for that provider. |
-| Live Meetings cannot transcribe | Configure a **server** transcription key and share a browser tab with audio enabled. |
+| Live Meetings cannot hear your own voice | Choose **My microphone**, or select **Include my microphone** alongside **Meeting tab**. Tab audio alone excludes your own microphone. |
+| Live Meetings cannot transcribe | Check the audio level and selected source. A **server** transcription key is required. A stalled request stops with a retry instead of waiting indefinitely. |
 | A saved track is missing | Use the same browser and website address where it was saved. Browser data clearing removes local tracks. |
 | A YouTube playback rate is unavailable | The player reports the video's supported rate instead of claiming the requested rate was applied. |
 
