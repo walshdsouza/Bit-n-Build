@@ -1,0 +1,10 @@
+:root { color-scheme: dark; }
+body { margin: 0; font-family: system-ui, sans-serif; background: #0e0e13; color: #e4e1e9; }
+.panel { padding: 16px; }
+h1 { font-size: 15px; margin: 0 0 12px; }
+button { width: 100%; padding: 10px; border-radius: 8px; border: none;
+  background: linear-gradient(135deg, #0566d9, #06b6d4); color: #001f26;
+  font-weight: 600; cursor: pointer; }
+.error { color: #f87171; font-size: 12px; }
+.transcript { list-style: none; padding: 0; margin-top: 12px; font-size: 13px; }
+.transcript li { padding: 6px 0; border-bottom: 1px solid #3d494c30; }
