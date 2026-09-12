@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import UserProfile from "./UserProfile";
 
 const breadcrumbMap: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -44,6 +45,7 @@ export default function TopBar() {
           <span className="material-symbols-outlined text-[14px]">add</span>
           New Translation
         </Link>
+        <UserProfile />
       </div>
     </header>
   );

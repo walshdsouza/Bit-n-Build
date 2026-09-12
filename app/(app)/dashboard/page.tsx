@@ -4,7 +4,28 @@ import UsageChart from "@/components/dashboard/UsageChart";
 import EngineStatus from "@/components/dashboard/EngineStatus";
 import RecentTranslations from "@/components/dashboard/RecentTranslations";
 
-export default function DashboardPage() {
+import { createClient } from '@/utils/supabase/server';
+
+export default async function DashboardPage() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  let activeJobs: any[] = [];
+  let recentJobs: any[] = [];
+
+  if (user) {
+    const { data } = await supabase
+      .from('projects')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+    
+    if (data) {
+      activeJobs = data.filter(p => p.status === 'processing');
+      recentJobs = data.filter(p => p.status === 'ready');
+    }
+  }
+
   return (
     <div className="p-space-lg max-w-[1200px] mx-auto">
       {/* Page header */}
@@ -20,8 +41,8 @@ export default function DashboardPage() {
         {/* Left column — main ingestion card (spans 2 cols) */}
         <div className="lg:col-span-2 flex flex-col gap-space-md">
           <IngestionCard />
-          <ProcessingQueue />
-          <RecentTranslations />
+          <ProcessingQueue jobs={activeJobs} />
+          <RecentTranslations translations={recentJobs} />
         </div>
 
         {/* Right column — metrics */}

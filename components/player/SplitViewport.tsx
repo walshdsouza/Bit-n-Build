@@ -8,16 +8,24 @@ declare global {
   }
 }
 
+interface Segment {
+  start: number;
+  end: number;
+  text: string;
+}
+
 interface SplitViewportProps {
   playing: boolean;
   currentTime: number;
   onTimeUpdate: (t: number) => void;
   onDurationChange: (d: number) => void;
   onPlayPause: () => void;
+  project?: any;
+  segments?: Segment[];
 }
 
 function getYouTubeId(url: string): string | null {
-  const match = url.match(/(?:v=|youtu\.be\/|embed\/)([A-Za-z0-9_-]{11})/);
+  const match = url?.match(/(?:v=|youtu\.be\/|embed\/)([A-Za-z0-9_-]{11})/);
   return match ? match[1] : null;
 }
 
@@ -27,48 +35,27 @@ export default function SplitViewport({
   onTimeUpdate,
   onDurationChange,
   onPlayPause,
+  project,
+  segments = [],
 }: SplitViewportProps) {
   const [splitPos, setSplitPos] = useState(50);
-  const [sourceVideoUrl, setSourceVideoUrl] = useState<string | null>(null);
-  const [sourceType, setSourceType] = useState<"youtube" | "file" | null>(null);
   const [currentGloss, setCurrentGloss] = useState<string>("—");
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const ytPlayerRef = useRef<any>(null);
   const isSeekingRef = useRef<boolean>(false);
 
-  // Read source from sessionStorage
-  useEffect(() => {
-    const url = sessionStorage.getItem("sourceVideoUrl");
-    const type = sessionStorage.getItem("sourceType") as "youtube" | "file" | null;
-    setSourceVideoUrl(url);
-    setSourceType(type);
-
-    // Also pull current gloss from transcript
-    const raw = sessionStorage.getItem("processedTranscript");
-    if (raw) {
-      try {
-        const data = JSON.parse(raw);
-        if (data.segments?.length) {
-          setCurrentGloss(data.segments[0].text);
-        }
-      } catch {}
-    }
-  }, []);
+  const sourceVideoUrl = project?.source_url || null;
+  const sourceType = project?.source_type || null;
 
   // Sync currentGloss with currentTime from transcript
   useEffect(() => {
-    const raw = sessionStorage.getItem("processedTranscript");
-    if (!raw) return;
-    try {
-      const data = JSON.parse(raw);
-      const active = data.segments?.find(
-        (s: { start: number; end: number; text: string }) =>
-          currentTime >= s.start && currentTime <= s.end
-      );
-      if (active) setCurrentGloss(active.text);
-    } catch {}
-  }, [currentTime]);
+    if (!segments.length) return;
+    const active = segments.find(
+      (s) => currentTime >= s.start && currentTime <= s.end
+    );
+    if (active) setCurrentGloss(active.text);
+  }, [currentTime, segments]);
 
   const youtubeId = sourceType === "youtube" && sourceVideoUrl ? getYouTubeId(sourceVideoUrl) : null;
 
@@ -167,14 +154,18 @@ export default function SplitViewport({
         <div className="relative z-10 w-full h-full flex flex-col items-center justify-center gap-3 p-4">
           {youtubeId ? (
             <div 
-              className="w-full max-w-sm aspect-video rounded-xl overflow-hidden border border-outline-variant/30 shadow-lg shadow-primary/10 relative"
+              className="w-full max-w-2xl aspect-video rounded-xl overflow-hidden border border-outline-variant/30 shadow-lg shadow-primary/10 relative group"
               onClick={onPlayPause}
             >
               {/* Wrapping the container to protect it from React reconciliation when YT replaces it with an iframe */}
               <div dangerouslySetInnerHTML={{ __html: '<div id="youtube-player-container" style="width: 100%; height: 100%; pointer-events: none;"></div>' }} className="w-full h-full" />
+              {/* Hover play/pause overlay for better UX */}
+              <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                <span className="material-symbols-outlined text-white text-[64px] opacity-80">{playing ? 'pause_circle' : 'play_circle'}</span>
+              </div>
             </div>
           ) : sourceType === "file" && sourceVideoUrl ? (
-            <div className="w-full max-w-sm aspect-video rounded-xl overflow-hidden border border-outline-variant/30 shadow-lg shadow-primary/10">
+            <div className="w-full max-w-2xl aspect-video rounded-xl overflow-hidden border border-outline-variant/30 shadow-lg shadow-primary/10 relative group">
               <video
                 ref={videoRef}
                 src={sourceVideoUrl}
@@ -182,6 +173,12 @@ export default function SplitViewport({
                 onDurationChange={(e) => onDurationChange(e.currentTarget.duration)}
                 onClick={onPlayPause}
               />
+              <div 
+                className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer pointer-events-none"
+                onClick={onPlayPause}
+              >
+                <span className="material-symbols-outlined text-white text-[64px] opacity-80">{playing ? 'pause_circle' : 'play_circle'}</span>
+              </div>
             </div>
           ) : (
             <div className="w-full max-w-xs aspect-video rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-center justify-center relative overflow-hidden">

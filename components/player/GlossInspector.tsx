@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 
 interface Segment {
+  id?: string;
   start: number;
   end: number;
   text: string;
@@ -9,6 +10,8 @@ interface Segment {
 
 interface GlossInspectorProps {
   currentTime: number;
+  segments?: Segment[];
+  onUpdateSegment?: (index: number, text: string) => void;
 }
 
 function formatTime(s: number): string {
@@ -21,45 +24,31 @@ const FALLBACK_ROWS = [
   { start: 0, end: 4, text: "WOMAN THINK FOOD" },
   { start: 4, end: 8, text: "IX WANT PIZZA BUT IX DIET" },
   { start: 8, end: 13, text: "IX CALL FRIEND ADVICE ASK" },
-  { start: 13, end: 18, text: "PLAN GO SALAD-BAR" },
-  { start: 18, end: 23, text: "FRIEND SUGGEST TACO IX-ARC" },
-  { start: 23, end: 28, text: "TWO-OF-US LAUGH" },
 ];
 
-export default function GlossInspector({ currentTime }: GlossInspectorProps) {
+export default function GlossInspector({ currentTime, segments = [], onUpdateSegment }: GlossInspectorProps) {
   const [search, setSearch] = useState("");
-  const [segments, setSegments] = useState<Segment[]>(FALLBACK_ROWS);
   const activeRef = useRef<HTMLDivElement>(null);
-
-  // Load real segments from sessionStorage
-  useEffect(() => {
-    const raw = sessionStorage.getItem("processedTranscript");
-    if (raw) {
-      try {
-        const data = JSON.parse(raw);
-        if (data.segments?.length) {
-          setSegments(data.segments);
-        }
-      } catch {}
-    }
-  }, []);
+  
+  // Use fallback if segments is empty
+  const displaySegments = segments.length > 0 ? segments : FALLBACK_ROWS;
 
   // Scroll active segment into view
   useEffect(() => {
     activeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [currentTime]);
 
-  const filtered = segments.filter((s) =>
+  const filtered = displaySegments.map((s, i) => ({ ...s, originalIndex: i })).filter((s) =>
     s.text.toLowerCase().includes(search.toLowerCase())
   );
 
   // NMM tags based on active segment index
-  const activeIndex = segments.findIndex(
+  const activeIndex = displaySegments.findIndex(
     (s) => currentTime >= s.start && currentTime <= s.end
   );
 
   return (
-    <div className="flex flex-col h-full bg-surface-container-lowest border-l border-outline-variant/30 overflow-hidden">
+    <div className="flex flex-col h-full bg-surface-container-lowest border-l border-outline-variant/30 overflow-hidden w-full">
       {/* Header */}
       <div className="p-4 border-b border-outline-variant/30 flex-shrink-0">
         <div className="flex items-center justify-between mb-3">
@@ -89,13 +78,13 @@ export default function GlossInspector({ currentTime }: GlossInspectorProps) {
             <p className="text-xs">No segments match</p>
           </div>
         ) : (
-          filtered.map((seg, i) => {
+          filtered.map((seg) => {
             const isActive = currentTime >= seg.start && currentTime <= seg.end;
             return (
               <div
-                key={i}
+                key={seg.originalIndex}
                 ref={isActive ? activeRef : null}
-                className={`px-4 py-3 border-b border-outline-variant/15 cursor-pointer transition-colors duration-200 ${
+                className={`px-4 py-3 border-b border-outline-variant/15 transition-colors duration-200 ${
                   isActive
                     ? "bg-primary/5 border-l-2 border-l-primary"
                     : "hover:bg-surface-container-high/20"
@@ -107,22 +96,25 @@ export default function GlossInspector({ currentTime }: GlossInspectorProps) {
                     className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
                       isActive
                         ? "text-primary bg-primary/10 border border-primary/30"
-                        : i < activeIndex
+                        : seg.originalIndex < activeIndex
                         ? "text-on-surface-variant bg-surface-container-low"
                         : "text-outline bg-transparent"
                     }`}
                   >
-                    {isActive ? "active" : i < activeIndex ? "synced" : "queued"}
+                    {isActive ? "active" : seg.originalIndex < activeIndex ? "synced" : "queued"}
                   </span>
                 </div>
-                <p
-                  className={`text-xs font-mono font-bold mb-0.5 leading-tight ${
+                
+                <input
+                  type="text"
+                  value={seg.text}
+                  onChange={(e) => onUpdateSegment?.(seg.originalIndex, e.target.value)}
+                  className={`w-full bg-transparent text-xs font-mono font-bold mb-0.5 leading-tight focus:outline-none focus:bg-surface-container-high/50 rounded px-1 -mx-1 py-0.5 ${
                     isActive ? "text-primary" : "text-on-surface"
                   }`}
-                >
-                  {seg.text}
-                </p>
-                <p className="text-[11px] text-on-surface-variant italic leading-tight">
+                />
+                
+                <p className="text-[11px] text-on-surface-variant italic leading-tight ml-1">
                   {formatTime(seg.start)} → {formatTime(seg.end)}
                 </p>
               </div>

@@ -7,11 +7,11 @@ export default function IngestionCard() {
   const [url, setUrl] = useState("");
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [fileName, setFileName] = useState<string | null>(null);
+  const [fileToUpload, setFileToUpload] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleSynthesize = async () => {
-    if (!url && !fileName) return;
+    if (!url && !fileToUpload) return;
     setLoading(true);
     try {
       let body: string | FormData;
@@ -23,10 +23,9 @@ export default function IngestionCard() {
         sessionStorage.setItem("sourceType", "youtube");
       } else {
         body = new FormData();
-        const file = fileRef.current?.files?.[0];
-        if (file) {
-          body.append("file", file);
-          objectUrl = URL.createObjectURL(file);
+        if (fileToUpload) {
+          body.append("file", fileToUpload);
+          objectUrl = URL.createObjectURL(fileToUpload);
           sessionStorage.setItem("sourceVideoUrl", objectUrl);
           sessionStorage.setItem("sourceType", "file");
         }
@@ -42,9 +41,17 @@ export default function IngestionCard() {
       console.log("Process Video Result:", data);
 
       if (data.success) {
+        if (!data.projectId) {
+          console.warn("Project ID missing, falling back to demo mode.", data.metadata?.dbError);
+          alert("Notice: Could not save project to database. You will see a demo preview. Reason: " + 
+            (data.metadata?.dbError?.message || data.metadata?.dbError || "Not logged in or DB error"));
+        }
+        
+        sessionStorage.setItem("sourceVideoUrl", url);
+        sessionStorage.setItem("sourceType", "youtube");
         sessionStorage.setItem("processedTranscript", JSON.stringify(data));
         setLoading(false);
-        router.push("/player/demo");
+        router.push(`/player/${data.projectId || "demo"}`);
       } else {
         alert("Ingestion Failed: " + (data.error || "Unknown error"));
         setLoading(false);
@@ -82,7 +89,7 @@ export default function IngestionCard() {
             e.preventDefault();
             setDragging(false);
             const file = e.dataTransfer.files[0];
-            if (file) setFileName(file.name);
+            if (file) setFileToUpload(file);
           }}
           onClick={() => fileRef.current?.click()}
           className={`border-2 border-dashed rounded-xl p-10 flex flex-col items-center justify-center gap-4 cursor-pointer transition-all duration-200 ${
@@ -98,15 +105,15 @@ export default function IngestionCard() {
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
-              if (file) setFileName(file.name);
+              if (file) setFileToUpload(file);
             }}
           />
           <div className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-all ${dragging ? "bg-primary/20 shadow-[0_0_30px_rgba(76,215,246,0.35)]" : "bg-surface-container-low"}`}>
             <span className="material-symbols-outlined text-[36px] text-primary">video_call</span>
           </div>
-          {fileName ? (
+          {fileToUpload ? (
             <div className="text-center">
-              <p className="text-on-surface font-semibold text-sm">{fileName}</p>
+              <p className="text-on-surface font-semibold text-sm">{fileToUpload.name}</p>
               <p className="text-on-surface-variant text-xs mt-1">Ready to synthesize</p>
             </div>
           ) : (
@@ -141,7 +148,7 @@ export default function IngestionCard() {
         {/* Synthesize */}
         <button
           onClick={handleSynthesize}
-          disabled={loading || (!url && !fileName)}
+          disabled={loading || (!url && !fileToUpload)}
           className="mt-4 w-full flex items-center justify-center gap-2 px-space-lg py-3 rounded-full bg-gradient-to-r from-secondary-container to-primary-container text-on-primary font-semibold shadow-lg shadow-primary/25 hover:shadow-primary/45 hover:scale-[1.01] active:scale-[0.99] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
         >
           {loading ? (

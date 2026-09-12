@@ -38,7 +38,7 @@ def get_transcript(video_id, languages=['en']):
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print(json.dumps({"success": False, "error": "No video ID provided"}))
-        sys.exit(1)
+        sys.exit(0)
         
     vid = sys.argv[1]
     langs = sys.argv[2].split(',') if len(sys.argv) > 2 else ['en']
@@ -48,4 +48,4 @@ if __name__ == '__main__':
         print(json.dumps({"success": True, "segments": res}))
     except Exception as e:
         print(json.dumps({"success": False, "error": str(e)}))
-        sys.exit(1)
+        sys.exit(0)
