@@ -4,3 +4,12 @@ label { display: block; font-size: 12px; color: #869397; margin: 12px 0 4px; tex
 input, select { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid #3d494c60; background: #1f1f25; color: #e4e1e9; font-size: 13px; box-sizing: border-box; }
 button { margin-top: 16px; width: 100%; padding: 10px; border-radius: 8px; border: none; background: linear-gradient(135deg, #0566d9, #06b6d4); color: #001f26; font-weight: 600; cursor: pointer; }
 .saved { font-size: 12px; color: #4cd7f6; margin-top: 8px; }
+
+.key-row { display: flex; gap: 6px; }
+.key-row input { flex: 1; }
+.key-row button.test { margin-top: 0; width: auto; flex: 0 0 auto; padding: 8px 12px; background: #1f272f; color: #a9bcc4; font-size: 12px; }
+.badge { display: inline-block; margin-top: 6px; font-size: 11px; padding: 2px 8px; border-radius: 999px; }
+.badge.checking { background: #3d494c40; color: #a9bcc4; }
+.badge.valid { background: #0566d91a; color: #4cd7f6; }
+.badge.invalid { background: #f8717120; color: #f87171; }
+.key-error { font-size: 11px; color: #f87171; margin: 4px 0 0; }

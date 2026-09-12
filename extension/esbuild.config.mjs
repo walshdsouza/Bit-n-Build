@@ -1,9 +1,18 @@
 import { build, context } from "esbuild";
 import { mkdirSync, copyFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const watch = process.argv.includes("--watch");
+const reactDir = fileURLToPath(new URL("./node_modules/react", import.meta.url));
+const reactDomDir = fileURLToPath(new URL("./node_modules/react-dom", import.meta.url));
 
 const options = {
+  alias: {
+    react: reactDir,
+    "react-dom": reactDomDir,
+    "react/jsx-runtime": `${reactDir}/jsx-runtime`,
+    "react-dom/client": `${reactDomDir}/client`,
+  },
   entryPoints: {
     background: "src/background/background.ts",
     "meet-bridge": "src/content-scripts/meet-bridge.ts",
