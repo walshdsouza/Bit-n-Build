@@ -28,6 +28,7 @@ const EMOTION_LEXICON: Record<EmotionLabel, string[]> = {
 };
 
 function detectEmotion(text: string): { emotion: EmotionLabel; confidence: number } {
+  if (typeof text !== "string" || !text) return { emotion: "neutral", confidence: 0.2 };
   const lower = text.toLowerCase();
   const words = lower.split(/\W+/).filter(Boolean);
   if (!words.length) return { emotion: "neutral", confidence: 0.2 };
@@ -57,8 +58,9 @@ function detectEmotion(text: string): { emotion: EmotionLabel; confidence: numbe
 
 /** Words per second, normalised against conversational English (~2.5 wps). */
 function speakingRate(seg: TranscriptSegment): number {
-  const dur = Math.max(seg.end - seg.start, 0.2);
-  const words = seg.text.split(/\s+/).filter(Boolean).length;
+  const span = Number(seg.end) - Number(seg.start);
+  const dur = Number.isFinite(span) ? Math.max(span, 0.2) : 0.2;
+  const words = typeof seg.text === "string" ? seg.text.split(/\s+/).filter(Boolean).length : 0;
   return words / dur;
 }
 

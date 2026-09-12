@@ -132,10 +132,38 @@ Worth being honest about for anyone building on this:
 
 - Dictionaries are small (ASL ~49 entries, ISL ~56). Everything else
   fingerspells, which is correct behaviour but slow to watch.
-- The rule-based glosser uses a small verb lexicon for SOV reordering; it
-  handles simple clauses well and complex/embedded ones poorly. The LLM path is
-  considerably better when a key is present.
+- The rule-based glosser uses a small verb lexicon for SOV reordering and
+  de-inflection. It handles simple clauses well and complex/embedded ones
+  poorly. The LLM path is considerably better when a key is present.
+- **English input only.** The tokeniser works on Latin script, so Devanagari
+  or other non-Latin input currently yields no lemmas. Hindi → ISL needs a
+  translation or transliteration pass in front of the glosser.
+- Accented characters are stripped by the tokeniser (`café` → `CAF`), so
+  loanwords fingerspell imperfectly.
 - Prosody is estimated, not measured (see above).
+- Speech denser than signing can keep up with is bounded by a minimum sign
+  duration (`MIN_SIGN_DURATION`); beyond that the avatar lags behind the audio
+  rather than flickering through signs unreadably. Real interpreters do the
+  same, but the lag is not currently surfaced in the UI.
 - Transitions between signs are linear-blended; real signing has coarticulation
   effects this does not model.
-- BSL is registered but has no lexicon yet.
+- BSL is registered but has no lexicon yet, so it fingerspells everything.
+
+## Testing
+
+The pure layers (`lib/`) have no framework dependencies and can be compiled and
+exercised directly with `tsc` + `node`. Areas worth keeping covered, because
+each has produced a real bug:
+
+- **Negation.** Contracted negatives (`don't`, `can't`, `won't`) must survive
+  glossing. Dropping one inverts the meaning of the sentence — the most
+  damaging failure mode this system has.
+- **De-inflection.** Every suffix rule is gated on a known verb stem; matching
+  the suffix alone breaks nouns (`NEED`, `SEED`, `BED`, `KING`).
+- **Timing.** Plan items must be monotonic, non-overlapping, finite, and cover
+  the reported duration.
+- **Malformed segments.** Missing/`null` text and non-numeric timestamps are
+  normalised in `lib/segments.ts`; they used to 500 the API and put `NaN` in
+  the plan.
+- **Pose solving.** No `NaN` and no out-of-reach hand targets across every
+  dictionary entry.

@@ -144,7 +144,10 @@ export const SIGN_LANGUAGES: Record<SignLanguageCode, SignLanguageProfile> = {
     // ISL signs are on average slightly slower to articulate than ASL, largely
     // because so many are two-handed.
     secondsPerSign: 0.62,
-    sourceLanguages: ["en", "hi"],
+    // English only for now. The rule-based glosser tokenises Latin script, so
+    // Devanagari input currently yields no lemmas — Hindi needs a translation
+    // or transliteration pass in front of the glosser before it can be claimed.
+    sourceLanguages: ["en"],
     promptNotes: [
       "Use strict Subject-Object-Verb order: 'I water drink', not 'I drink water'.",
       "Never sign articles (a/an/the) or any form of the copula 'to be'.",

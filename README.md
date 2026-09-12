@@ -64,6 +64,18 @@ curl -X POST http://localhost:3000/api/translate \
 # → gloss: "YESTERDAY IX-1 SCHOOL GO"
 ```
 
+## Testing
+
+```bash
+npm test        # pipeline + timing (no server needed)
+npm run test:api   # API integration — needs `npx next dev -p 3111` running
+```
+
+The `lib/` layer has no React or three.js imports, so it compiles with `tsc`
+and runs in plain Node — no test framework. Covers grammar invariants for both
+languages, HamNoSys/SiGML validity, malformed input, plan timing, and pose-solver
+numeric safety.
+
 ## Documentation
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full pipeline, how ISL

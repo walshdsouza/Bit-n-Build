@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node tests/run.mjs",
+    "test:api": "node tests/run.mjs --api"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",

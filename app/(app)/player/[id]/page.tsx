@@ -112,23 +112,29 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
   useEffect(() => {
     if (hasMedia || !playing || !planDuration) return;
 
+    // Anchor playback to wall time rather than accumulating frame deltas.
+    // Summing deltas makes the clock frame-rate dependent — it runs slow on a
+    // struggling device, and browsers pause rAF entirely on a hidden tab, so a
+    // delta-based clock either stalls or lurches forward on return.
+    const startedAt = performance.now();
+    const startTime = timeRef.current;
     let raf = 0;
-    let last = performance.now();
-    const tick = () => {
-      const now = performance.now();
-      const elapsed = (now - last) / 1000;
-      last = now;
-      timeRef.current = timeRef.current + elapsed;
 
-      if (timeRef.current >= planDuration) {
+    const tick = () => {
+      const elapsed = (performance.now() - startedAt) / 1000;
+      const next = startTime + elapsed;
+
+      if (next >= planDuration) {
         timeRef.current = planDuration;
         setCurrentTime(planDuration);
         setPlaying(false);
         return;
       }
-      setCurrentTime(timeRef.current);
+      timeRef.current = next;
+      setCurrentTime(next);
       raf = requestAnimationFrame(tick);
     };
+
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [hasMedia, playing, planDuration]);

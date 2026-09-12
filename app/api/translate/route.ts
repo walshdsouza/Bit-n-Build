@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { TranscriptSegment } from "@/lib/types";
+import { normalizeSegments } from "@/lib/segments";
 import { generateGloss } from "@/lib/gloss-engine";
 import { analyzeProsody } from "@/lib/prosody";
 import { buildSignPlan } from "@/lib/sign-plan";
@@ -18,15 +18,15 @@ export async function POST(req: NextRequest) {
   const started = Date.now();
   try {
     const body = await req.json().catch(() => ({}));
-    const { segments, lang, duration } = body as {
-      segments?: TranscriptSegment[];
-      lang?: string;
-      duration?: number;
-    };
+    const { lang, duration } = body as { lang?: string; duration?: number };
 
-    if (!Array.isArray(segments) || segments.length === 0) {
+    // Drops unusable entries and repairs bad timestamps rather than letting
+    // them crash the gloss engine or poison the plan with NaN times.
+    const segments = normalizeSegments((body as { segments?: unknown }).segments);
+
+    if (segments.length === 0) {
       return NextResponse.json(
-        { error: "Provide a non-empty `segments` array." },
+        { error: "Provide a non-empty `segments` array, each with a `text` string." },
         { status: 400 },
       );
     }
