@@ -32,8 +32,27 @@ OPENAI_API_KEY=...
 Keys can also be supplied per-request via `x-groq-api-key` / `x-openai-api-key`
 headers, or through the in-app Settings page.
 
-YouTube ingestion additionally needs Python with `youtube-transcript-api`
-installed (see `scripts/get_youtube_transcript.py`).
+### YouTube ingestion
+
+Two paths, tried in order:
+
+1. **Captions** — needs Python with `youtube-transcript-api`:
+   ```bash
+   pip install youtube-transcript-api
+   ```
+2. **Audio fallback**, used when a video has no captions (or the caption reader
+   isn't installed) — downloads the audio and runs Whisper. Needs `yt-dlp` and
+   an API key:
+   ```bash
+   pip install -U yt-dlp
+   ```
+
+> **yt-dlp needs a JavaScript runtime.** YouTube gates media URLs behind a JS
+> challenge; without a runtime, extraction appears to work but every download
+> fails with `HTTP Error 403`. Install [Deno](https://deno.com) and keep
+> `yt-dlp` current — it needs frequent updates to track YouTube's changes.
+
+Videos with captions work with neither of the above beyond Python.
 
 ## Features
 

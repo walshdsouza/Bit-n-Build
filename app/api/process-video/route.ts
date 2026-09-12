@@ -5,6 +5,83 @@ import fs from 'fs';
 import { getTempDir, cleanupTempFiles } from '@/lib/temp-manager';
 import { extractAudioTrack } from '@/lib/ffmpeg';
 import { transcribeAudioFile } from '@/lib/whisper';
+import { downloadYouTubeAudio } from '@/lib/youtube-audio';
+
+/**
+ * Fallback for YouTube videos with no captions: download the audio and
+ * transcribe it with Whisper. Without this, any video whose uploader did not
+ * publish captions fails outright.
+ */
+async function transcribeYouTubeAudio(
+  req: NextRequest,
+  videoId: string,
+  captionError?: string,
+) {
+  const groqKey = req.headers.get('x-groq-api-key') || process.env.GROQ_API_KEY;
+  const openaiKey = req.headers.get('x-openai-api-key') || process.env.OPENAI_API_KEY;
+
+  if (!groqKey && !openaiKey) {
+    // Say which of the two situations actually applies, so the fix is obvious.
+    const cause = captionError?.startsWith('Caption reader unavailable')
+      ? 'The caption reader is not working on this machine (install it with "pip install youtube-transcript-api")'
+      : 'This video has no captions';
+
+    return NextResponse.json(
+      {
+        error:
+          `${cause}, so its audio needs transcribing — but no Groq or OpenAI API key is configured. ` +
+          'Add GROQ_API_KEY to .env.local, or set a key in Settings.',
+        source: 'youtube',
+        captionError,
+      },
+      { status: 422 },
+    );
+  }
+
+  let temps: string[] = [];
+  try {
+    const tempDir = await getTempDir();
+    const audio = await downloadYouTubeAudio(videoId, tempDir);
+    temps = audio.tempFiles;
+
+    const buffer = await fs.promises.readFile(audio.audioPath);
+    const blob = new Blob([buffer], { type: 'audio/mpeg' });
+    const transcription = await transcribeAudioFile(
+      blob,
+      `${videoId}.mp3`,
+      groqKey,
+      openaiKey,
+    );
+
+    return NextResponse.json({
+      success: true,
+      source: 'youtube',
+      duration: transcription.duration || audio.duration || 0,
+      text: transcription.text,
+      segments: transcription.segments,
+      metadata: {
+        provider: transcription.provider,
+        fallback: 'yt-dlp+whisper',
+        reason: 'no captions available',
+        title: audio.title,
+        videoId,
+        processedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err: any) {
+    console.error('[youtube audio fallback]', err);
+    return NextResponse.json(
+      {
+        error: err?.message || 'Failed to transcribe audio for a video without captions.',
+        source: 'youtube',
+        captionError,
+      },
+      { status: 502 },
+    );
+  } finally {
+    await cleanupTempFiles(temps);
+  }
+}
 
 // Extract an 11-char video ID from any standard YouTube URL
 function extractYouTubeVideoId(input: string): string | null {
@@ -82,20 +159,29 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // The caption reader can fail for reasons that have nothing to do with
+      // the video — Python missing from PATH, youtube_transcript_api not
+      // installed. Those break every video, so fall back to audio here too
+      // rather than dead-ending the request.
       if (lastError) {
         console.error('Python execution failed after trying all commands:', lastError);
-        return NextResponse.json({ 
-          error: 'Failed to execute Python script. Ensure Python is installed and in your PATH, and you have restarted the Next.js server.', 
-          execError: (lastError as any)?.message || String(lastError)
-        }, { status: 500 });
+        return await transcribeYouTubeAudio(
+          req,
+          videoId,
+          `Caption reader unavailable: ${(lastError as any)?.message || String(lastError)}`,
+        );
       }
 
       try {
         const data = JSON.parse(stdout);
-        if (!data.success) {
-          return NextResponse.json({ error: data.error, source: 'youtube' }, { status: 400 });
+
+        // Captions are unavailable for a large share of videos. Rather than
+        // failing, pull the audio with yt-dlp and run it through the same
+        // Whisper path that already serves uploaded files.
+        if (!data.success || !Array.isArray(data.segments) || data.segments.length === 0) {
+          return await transcribeYouTubeAudio(req, videoId, data?.error);
         }
-        
+
         const text = data.segments.map((s: any) => s.text).join(' ');
         const duration = data.segments.length > 0 
           ? data.segments[data.segments.length - 1].end 
