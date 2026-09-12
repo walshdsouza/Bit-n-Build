@@ -51,11 +51,11 @@ export async function POST(req: NextRequest) {
       const pythonScriptPath = path.join(process.cwd(), 'scripts', 'get_youtube_transcript.py');
       
       const cmds = [
-        'python', 
-        'py', 
+        // Real Python 3.13 install path (confirmed on this machine)
+        'C:\\Users\\WALSH\\AppData\\Local\\Programs\\Python\\Python313\\python.exe',
+        'python',
+        'py',
         'python3',
-        // Fallback for Windows Store Python if PATH is completely broken in the terminal
-        path.join(process.env.LOCALAPPDATA || 'C:\\Users\\' + (process.env.USERNAME || 'soham') + '\\AppData\\Local', 'Microsoft', 'WindowsApps', 'python.exe')
       ];
       let stdout = '';
       let stderr = '';
@@ -69,7 +69,17 @@ export async function POST(req: NextRequest) {
               shell: true,
               env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
             }, (error, out, err) => {
-              if (error) reject(error);
+              if (error) {
+                // The python script exits with code 1 if it fails to fetch (e.g. no captions).
+                // If we have valid JSON in stdout, it's a handled application error, not a python execution failure.
+                try {
+                  const data = JSON.parse(out);
+                  if (data && typeof data.success === 'boolean') {
+                    return resolve({stdout: out, stderr: err});
+                  }
+                } catch (_) {}
+                reject(error);
+              }
               else resolve({stdout: out, stderr: err});
             });
           });

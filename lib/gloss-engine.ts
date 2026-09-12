@@ -276,7 +276,7 @@ async function glossWithLlm(
   const endpoint = useGroq
     ? "https://api.groq.com/openai/v1/chat/completions"
     : "https://api.openai.com/v1/chat/completions";
-  const model = useGroq ? "mixtral-8x7b-32768" : "gpt-4o";
+  const model = useGroq ? "openai/gpt-oss-20b" : "gpt-4o";
 
   const numbered = segments.map((s, i) => `${i + 1}. ${s.text}`).join("\n");
 

@@ -58,7 +58,6 @@ const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 const _axis = new THREE.Vector3();
-const _q = new THREE.Quaternion();
 
 /** Places a capsule (Y-aligned, centred) so it spans `from` → `to`. */
 function spanCapsule(mesh: THREE.Mesh, from: THREE.Vector3, to: THREE.Vector3) {
@@ -67,16 +66,25 @@ function spanCapsule(mesh: THREE.Mesh, from: THREE.Vector3, to: THREE.Vector3) {
   mesh.position.copy(from).addScaledVector(_dir, 0.5);
   _dir.divideScalar(len);
   mesh.quaternion.setFromUnitVectors(UP, _dir);
-  const params =
-    mesh.geometry instanceof THREE.CapsuleGeometry ? mesh.geometry.parameters : null;
-  const nominal = params ? (params.height ?? 1) + 2 * (params.radius ?? 0) : 1;
+  if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+  const box = mesh.geometry.boundingBox!;
+  const nominal = Math.abs(box.max.y - box.min.y) || 1;
   mesh.scale.y = len / nominal;
 }
 
 /**
- * Two-bone IK. Solves elbow placement for a hand target, with a pole hint that
- * keeps elbows dropping down and slightly behind the torso the way human arms
- * actually hang.
+ * Two-bone IK. Solves elbow position geometrically.
+ *
+ * Instead of the fragile "cross-product pole vector + quaternion rotation" approach
+ * (which flips direction depending on arm angle), we directly compute the elbow by
+ * decomposing in the plane formed by the arm direction and the outward (side) vector:
+ *
+ *   elbow = shoulder
+ *         + armDir * (l1 * cos α)        ← along the arm
+ *         + bendDir * (l1 * sin α)       ← perpendicular, always outward
+ *
+ * bendDir = component of "outward" that is perpendicular to armDir.
+ * This is guaranteed to push the elbow to the correct side for any hand position.
  */
 function solveArm(
   shoulder: THREE.Vector3,
@@ -96,17 +104,34 @@ function solveArm(
   }
   dist = Math.max(dist, 1e-4);
 
-  const cos = Math.min(1, Math.max(-1, (l1 * l1 + dist * dist - l2 * l2) / (2 * l1 * dist)));
-  const alpha = Math.acos(cos);
+  // Law of cosines: angle at shoulder between arm dir and upper arm.
+  const cosAlpha = Math.min(1, Math.max(-1, (l1 * l1 + dist * dist - l2 * l2) / (2 * l1 * dist)));
+  const sinAlpha = Math.sqrt(1 - cosAlpha * cosAlpha);
 
+  // Arm direction (shoulder → hand, normalised).
   _dir.copy(_a).divideScalar(dist);
-  _b.set(side * 0.22, -1, -0.5).normalize();
-  _axis.crossVectors(_dir, _b);
-  if (_axis.lengthSq() < 1e-6) _axis.set(0, 0, side);
-  _axis.normalize();
 
-  _q.setFromAxisAngle(_axis, -alpha);
-  out.copy(_dir).applyQuaternion(_q).multiplyScalar(l1).add(shoulder);
+  // The "outward" direction: to the side and slightly forward.
+  // This defines WHICH side the elbow bends toward.
+  _b.set(side * 0.9, 0, 0.3).normalize();
+
+  // Remove the component of _b that is parallel to _dir, leaving only the
+  // perpendicular part. This is the in-plane bend direction.
+  const proj = _b.dot(_dir);
+  _b.addScaledVector(_dir, -proj); // _b is now perpendicular to _dir
+  const bendLen = _b.length();
+  if (bendLen < 1e-6) {
+    // Arm is pointing directly outward — use a fallback
+    _b.set(0, -1, 0).addScaledVector(_dir, -_b.dot(_dir)).normalize();
+  } else {
+    _b.divideScalar(bendLen);
+  }
+
+  // Elbow = shoulder + along * l1*cosAlpha + perp * l1*sinAlpha
+  out
+    .copy(_dir).multiplyScalar(l1 * cosAlpha)
+    .addScaledVector(_b, l1 * sinAlpha)
+    .add(shoulder);
 }
 
 function applyFingers(hand: HandRig, curl: readonly number[], spread: number, side: 1 | -1) {
@@ -252,8 +277,9 @@ export default function SignAvatar({
 
     // Three-point studio lighting. Intensities are kept moderate because the
     // bloom threshold below discriminates on linear HDR brightness.
-    const key = new THREE.DirectionalLight(0xfff3e6, 1.7);
-    key.position.set(1.6, 2.9, 2.4);
+    // Key light — warm, high and slightly right, the primary source of definition.
+    const key = new THREE.DirectionalLight(0xfff8f0, 2.2);
+    key.position.set(1.2, 3.2, 2.8);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
     key.shadow.camera.near = 0.5;
@@ -266,16 +292,18 @@ export default function SignAvatar({
     key.shadow.normalBias = 0.02;
     scene.add(key);
 
-    const fill = new THREE.DirectionalLight(0xbfe4f5, 0.5);
-    fill.position.set(-2.2, 1.5, 1.4);
+    // Fill — cool blue-white, softens shadows without washing out the key.
+    const fill = new THREE.DirectionalLight(0xd0eeff, 0.65);
+    fill.position.set(-2.4, 1.8, 1.6);
     scene.add(fill);
 
-    // Cyan rim to match the app's accent and separate the figure from the bg.
-    const rim = new THREE.DirectionalLight(0x4cd7f6, 1.3);
-    rim.position.set(-1.4, 2.0, -2.4);
+    // Cyan rim — punchy, separates figure from bg, matches the app accent color.
+    const rim = new THREE.DirectionalLight(0x00e5ff, 1.8);
+    rim.position.set(-1.2, 2.4, -2.8);
     scene.add(rim);
 
-    scene.add(new THREE.HemisphereLight(0xa8dcec, 0x101820, 0.32));
+    // Under-fill to lift shadow areas slightly.
+    scene.add(new THREE.HemisphereLight(0x9ad0e8, 0x080e14, 0.28));
 
     const rig = buildCharacter();
     scene.add(rig.root);
@@ -367,7 +395,7 @@ export default function SignAvatar({
     });
     const composer = new EffectComposer(renderer, hdrTarget);
     composer.addPass(new RenderPass(scene, camera));
-    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.75, 0.45, 1.75);
+    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.35, 0.6, 1.8);
     composer.addPass(bloom);
     composer.addPass(new OutputPass());
 
