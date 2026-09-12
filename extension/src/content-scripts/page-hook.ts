@@ -64,6 +64,13 @@ function patchRTCPeerConnection() {
 function flushQueue(rec: MediaRecorder) {
   if (queue.length === 0) return;
   const blob = new Blob(queue, { type: rec.mimeType });
+  console.log("[GestureSync] FLUSHED AUDIO", {
+    chunks: queue.length,
+    bytes: blob.size,
+    kb: (blob.size / 1024).toFixed(2),
+    type: blob.type,
+  });
+
   queue = [];
   queuedBytes = 0;
   window.postMessage({ marker: MARKER, type: "AUDIO_CHUNK", blob }, "*");
@@ -81,11 +88,29 @@ function flushQueue(rec: MediaRecorder) {
  */
 function startNewRecorderCycle() {
   const { destination: dest } = ensureAudioGraph();
+  
+  console.log("[GestureSync] CREATING RECORDER", {
+    streamActive: dest.stream.active,
+    tracks: dest.stream.getAudioTracks().map((track) => ({
+      id: track.id,
+      enabled: track.enabled,
+      muted: track.muted,
+      readyState: track.readyState,
+    })),
+  });
+  
   queue = [];
   queuedBytes = 0;
 
   const rec = new MediaRecorder(dest.stream, { mimeType: "audio/webm;codecs=opus" });
   recorder = rec;
+  
+   rec.onstart = () => {
+    console.log("[GestureSync] RECORDER STARTED", {
+      state: rec.state,
+      mimeType: rec.mimeType,
+    });
+  };
 
   rec.ondataavailable = (e) => {
     if (e.data.size === 0) return;
