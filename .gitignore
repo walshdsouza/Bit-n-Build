@@ -48,3 +48,8 @@ __pycache__/
 
 # test build output
 tests/.build
+
+# sign language datasets (auto-downloaded, do not commit)
+/public/signs/*.sigml
+/public/signs/lexicon.json
+/data/datasets/

@@ -111,23 +111,27 @@ function solveArm(
   // Arm direction (shoulder → hand, normalised).
   _dir.copy(_a).divideScalar(dist);
 
-  // The "outward" direction: to the side and slightly forward.
-  // This defines WHICH side the elbow bends toward.
-  _b.set(side * 0.9, 0, 0.3).normalize();
+  // Pole vector: elbow bends DOWNWARD and slightly to the side — this matches
+  // the natural resting arm posture a human interpreter uses. A pure outward
+  // (side) vector caused elbow-flips when the hand moved across the centreline.
+  // Bias toward -Y (down) keeps elbows below the wrist for all typical signing
+  // positions (waist-to-forehead range).
+  _b.set(side * 0.45, -0.80, 0.40).normalize();
 
-  // Remove the component of _b that is parallel to _dir, leaving only the
-  // perpendicular part. This is the in-plane bend direction.
+  // Remove the component of _b parallel to the arm direction (Gram-Schmidt).
+  // This leaves only the perpendicular in-plane bend direction.
   const proj = _b.dot(_dir);
-  _b.addScaledVector(_dir, -proj); // _b is now perpendicular to _dir
+  _b.addScaledVector(_dir, -proj);
   const bendLen = _b.length();
   if (bendLen < 1e-6) {
-    // Arm is pointing directly outward — use a fallback
-    _b.set(0, -1, 0).addScaledVector(_dir, -_b.dot(_dir)).normalize();
+    // Arm points exactly along pole — absolute fallback.
+    _b.set(0, -1, 0);
+    _b.addScaledVector(_dir, -_b.dot(_dir)).normalize();
   } else {
     _b.divideScalar(bendLen);
   }
 
-  // Elbow = shoulder + along * l1*cosAlpha + perp * l1*sinAlpha
+  // Elbow = shoulder + along * l1·cosα + perp * l1·sinα
   out
     .copy(_dir).multiplyScalar(l1 * cosAlpha)
     .addScaledVector(_b, l1 * sinAlpha)
@@ -146,7 +150,8 @@ function applyFingers(hand: HandRig, curl: readonly number[], spread: number, si
   });
 }
 
-const _shoulderR = new THREE.Vector3(0.175, 1.328, 0);
+// Shoulder joint world positions — must match the pauldron mesh in buildCharacter.ts (line 688).
+const _shoulderR = new THREE.Vector3( 0.175, 1.328, 0);
 const _shoulderL = new THREE.Vector3(-0.175, 1.328, 0);
 const _elbow = new THREE.Vector3();
 const _target = new THREE.Vector3();
@@ -168,7 +173,15 @@ function applyPose(rig: Rig, pose: AvatarPose, blink: number) {
     elbowMesh.position.copy(_elbow);
 
     hand.group.position.copy(_target);
-    hand.group.rotation.set(handPose.rot.x, handPose.rot.y, handPose.rot.z);
+    // Base rotation: the hand mesh is built with fingers pointing +Y and the
+    // back of the hand (disc) toward -Z (away from camera). Rotate 180° around
+    // Y so the PALM faces the camera (+Z) by default, then apply the sign's
+    // wrist rotation on top.
+    hand.group.rotation.set(
+      handPose.rot.x,
+      handPose.rot.y + Math.PI,
+      handPose.rot.z * side,
+    );
     applyFingers(hand, handPose.curl, handPose.spread, side);
   };
 

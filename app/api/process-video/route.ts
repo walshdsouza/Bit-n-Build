@@ -51,7 +51,9 @@ export async function POST(req: NextRequest) {
       const pythonScriptPath = path.join(process.cwd(), 'scripts', 'get_youtube_transcript.py');
       
       const cmds = [
-        // Real Python 3.13 install path (confirmed on this machine)
+        // Real Python 3.11 install path (Windows Store/Alias)
+        'C:\\Users\\soham\\AppData\\Local\\Microsoft\\WindowsApps\\python3.11.exe',
+        'C:\\Users\\soham\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe',
         'C:\\Users\\WALSH\\AppData\\Local\\Programs\\Python\\Python313\\python.exe',
         'python',
         'py',
@@ -66,7 +68,6 @@ export async function POST(req: NextRequest) {
           const result = await new Promise<{stdout: string, stderr: string}>((resolve, reject) => {
             execFile(cmd, [pythonScriptPath, videoId], { 
               encoding: 'utf8',
-              shell: true,
               env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
             }, (error, out, err) => {
               if (error) {
