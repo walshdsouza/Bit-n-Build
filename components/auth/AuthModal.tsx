@@ -1,5 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { login, signup } from "@/app/auth/actions";
+import { createClient } from "@/utils/supabase/client";
 
 interface AuthModalProps {
   mode: "signin" | "signup";
@@ -11,15 +13,33 @@ export default function AuthModal({ mode, onClose, onModeChange }: AuthModalProp
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    // Mock auth — replace with NextAuth / Supabase Auth
-    await new Promise((r) => setTimeout(r, 1200));
-    setLoading(false);
-    window.location.href = "/dashboard";
+    setError(null);
+    const formData = new FormData();
+    formData.append("email", email);
+    formData.append("password", password);
+    if (mode === "signup") formData.append("name", name);
+
+    startTransition(async () => {
+      const res = mode === "signin" ? await login(formData) : await signup(formData);
+      if (res?.error) {
+        setError(res.error);
+      }
+    });
+  };
+
+  const handleGoogleLogin = async () => {
+    const supabase = createClient();
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      }
+    });
   };
 
   return (
@@ -72,6 +92,11 @@ export default function AuthModal({ mode, onClose, onModeChange }: AuthModalProp
           </div>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-space-sm">
+            {error && (
+              <div className="p-2 mb-2 text-sm text-red-500 bg-red-500/10 border border-red-500/20 rounded-md">
+                {error}
+              </div>
+            )}
             {mode === "signup" && (
               <div className="flex flex-col gap-1">
                 <label className="text-xs text-on-surface-variant font-medium">Full Name</label>
@@ -116,10 +141,10 @@ export default function AuthModal({ mode, onClose, onModeChange }: AuthModalProp
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={isPending}
               className="mt-space-sm flex items-center justify-center gap-2 px-space-lg py-space-sm rounded-full bg-gradient-to-r from-secondary-container to-primary-container font-label-button text-label-button text-on-primary shadow-lg shadow-primary/20 hover:shadow-primary/40 hover:scale-[1.02] active:scale-[0.99] transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
-              {loading ? (
+              {isPending ? (
                 <span className="w-4 h-4 rounded-full border-2 border-on-primary/30 border-t-on-primary animate-spin" />
               ) : null}
               <span>{mode === "signin" ? "Sign In to GestureSync" : "Create Free Account"}</span>
@@ -134,7 +159,11 @@ export default function AuthModal({ mode, onClose, onModeChange }: AuthModalProp
           </div>
 
           {/* Social */}
-          <button className="w-full flex items-center justify-center gap-2 rounded-lg py-2.5 bg-surface-container-high border border-outline-variant/40 text-on-surface text-sm font-medium hover:border-primary/30 hover:bg-surface-container-highest transition-all">
+          <button 
+            type="button"
+            onClick={handleGoogleLogin}
+            className="w-full flex items-center justify-center gap-2 rounded-lg py-2.5 bg-surface-container-high border border-outline-variant/40 text-on-surface text-sm font-medium hover:border-primary/30 hover:bg-surface-container-highest transition-all"
+          >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
               <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>

@@ -8,6 +8,12 @@ interface GlossInspectorProps {
   rows?: GlossRow[];
   plan?: SignPlan | null;
   lang?: string;
+  /**
+   * When provided, the English source line becomes editable. Correcting a
+   * mis-heard word there is what fixes the gloss — and it is the field the
+   * database persists — so edits target the source rather than the gloss.
+   */
+  onUpdateSource?: (index: number, text: string) => void;
 }
 
 function formatTime(s: number): string {
@@ -16,7 +22,13 @@ function formatTime(s: number): string {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
-export default function GlossInspector({ currentTime, rows, plan, lang = "ASL" }: GlossInspectorProps) {
+export default function GlossInspector({
+  currentTime,
+  rows,
+  plan,
+  lang = "ASL",
+  onUpdateSource,
+}: GlossInspectorProps) {
   const [search, setSearch] = useState("");
   const [fallbackRows, setFallbackRows] = useState<GlossRow[]>([]);
   const activeRef = useRef<HTMLDivElement>(null);
@@ -61,10 +73,13 @@ export default function GlossInspector({ currentTime, rows, plan, lang = "ASL" }
     activeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [currentTime]);
 
+  // Rows carry their original index so that editing and the synced/queued
+  // status still address the right row while a search filter is applied.
   const filtered = useMemo(() => {
+    const indexed = data.map((r, originalIndex) => ({ ...r, originalIndex }));
     const q = search.toLowerCase();
-    if (!q) return data;
-    return data.filter(
+    if (!q) return indexed;
+    return indexed.filter(
       (r) => r.gloss.toLowerCase().includes(q) || r.sourceText.toLowerCase().includes(q),
     );
   }, [data, search]);
@@ -116,7 +131,8 @@ export default function GlossInspector({ currentTime, rows, plan, lang = "ASL" }
             <p className="text-xs">No segments match</p>
           </div>
         ) : (
-          filtered.map((row, i) => {
+          filtered.map((row) => {
+            const i = row.originalIndex;
             const isActive = currentTime >= row.startTime && currentTime <= row.endTime;
             return (
               <div
@@ -145,7 +161,8 @@ export default function GlossInspector({ currentTime, rows, plan, lang = "ASL" }
                   </span>
                 </div>
 
-                {/* Target-language gloss */}
+                {/* Target-language gloss (read-only; it is regenerated from
+                    the source text whenever that is corrected). */}
                 {row.gloss ? (
                   <p
                     className={`text-xs font-mono font-bold mb-1 leading-tight ${
@@ -158,10 +175,21 @@ export default function GlossInspector({ currentTime, rows, plan, lang = "ASL" }
                   <p className="text-[11px] font-mono text-outline mb-1 italic">not yet glossed</p>
                 )}
 
-                {/* English source */}
-                <p className="text-[11px] text-on-surface-variant italic leading-tight">
-                  {row.sourceText}
-                </p>
+                {/* English source — editable, which re-glosses the line */}
+                {onUpdateSource ? (
+                  <input
+                    type="text"
+                    value={row.sourceText}
+                    onChange={(e) => onUpdateSource(i, e.target.value)}
+                    aria-label={`Source text for segment ${i + 1}`}
+                    title="Correct the transcript — the gloss regenerates from it"
+                    className="w-full bg-transparent text-[11px] text-on-surface-variant italic leading-tight rounded px-1 -mx-1 py-0.5 focus:outline-none focus:not-italic focus:bg-surface-container-high/50 focus:text-on-surface"
+                  />
+                ) : (
+                  <p className="text-[11px] text-on-surface-variant italic leading-tight">
+                    {row.sourceText}
+                  </p>
+                )}
 
                 {/* Per-row NMMs */}
                 {row.nmm?.length > 0 && (

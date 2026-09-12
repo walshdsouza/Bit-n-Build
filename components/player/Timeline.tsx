@@ -1,5 +1,5 @@
 "use client";
-
+import { useState } from "react";
 interface TimelineProps {
   playing: boolean;
   onPlayPause: () => void;
@@ -15,7 +15,11 @@ function formatTime(s: number): string {
 }
 
 export default function Timeline({ playing, onPlayPause, currentTime, duration, onSeek }: TimelineProps) {
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 33;
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [scrubTime, setScrubTime] = useState(0);
+
+  const displayTime = isScrubbing ? scrubTime : currentTime;
+  const progress = duration > 0 ? (displayTime / duration) * 100 : 0;
   const bufferedPct = Math.min(100, progress + 20);
 
   return (
@@ -23,7 +27,7 @@ export default function Timeline({ playing, onPlayPause, currentTime, duration, 
       {/* Scrubber */}
       <div className="relative mb-2 flex items-center gap-3">
         <span className="text-xs font-mono text-outline w-10 text-right shrink-0">
-          {formatTime(currentTime)}
+          {formatTime(displayTime)}
         </span>
         <div className="flex-1 relative h-1.5 bg-surface-container rounded-full overflow-hidden cursor-pointer">
           {/* Buffered */}
@@ -38,7 +42,7 @@ export default function Timeline({ playing, onPlayPause, currentTime, duration, 
           />
         </div>
         <span className="text-xs font-mono text-outline w-10 shrink-0">
-          {duration > 0 ? formatTime(duration) : "0:28"}
+          {duration > 0 ? formatTime(duration) : "0:00"}
         </span>
         {/* Draggable thumb */}
         <input
@@ -46,8 +50,18 @@ export default function Timeline({ playing, onPlayPause, currentTime, duration, 
           min={0}
           max={duration > 0 ? duration : 100}
           step={0.1}
-          value={currentTime}
-          onChange={(e) => onSeek(Number(e.target.value))}
+          value={displayTime}
+          onPointerDown={() => {
+            setIsScrubbing(true);
+            setScrubTime(currentTime);
+          }}
+          onChange={(e) => {
+            setScrubTime(Number(e.target.value));
+          }}
+          onPointerUp={(e) => {
+            setIsScrubbing(false);
+            onSeek(Number(e.currentTarget.value));
+          }}
           className="absolute inset-0 w-full opacity-0 cursor-pointer"
         />
       </div>

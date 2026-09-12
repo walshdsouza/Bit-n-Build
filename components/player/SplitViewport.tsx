@@ -24,6 +24,12 @@ interface SplitViewportProps {
   lang?: string;
   /** Use the CWASA WebGL avatar (requires internet for allcsa.js). Falls back to procedural. */
   useCwasa?: boolean;
+  /**
+   * Saved project row, when the player was opened from the database. Takes
+   * precedence over the sessionStorage handoff, which is still used by the
+   * demo and by a freshly-ingested video that has not been saved yet.
+   */
+  project?: { source_url?: string | null; source_type?: string | null } | null;
 }
 
 function getYouTubeId(url: string): string | null {
@@ -40,6 +46,7 @@ export default function SplitViewport({
   plan = null,
   lang = "ASL",
   useCwasa = false,
+  project = null,
 }: SplitViewportProps) {
   const [splitPos, setSplitPos] = useState(50);
   const [sourceVideoUrl, setSourceVideoUrl] = useState<string | null>(null);
@@ -79,10 +86,12 @@ export default function SplitViewport({
     setGlossTimeline(tl);
   }, [plan]);
 
-  // Read source from sessionStorage
+  // Resolve the media source: a saved project row wins, otherwise fall back to
+  // the sessionStorage handoff from ingestion.
   useEffect(() => {
-    const url = sessionStorage.getItem("sourceVideoUrl");
-    const type = sessionStorage.getItem("sourceType") as "youtube" | "file" | null;
+    const url = project?.source_url ?? sessionStorage.getItem("sourceVideoUrl");
+    const type = (project?.source_type ??
+      sessionStorage.getItem("sourceType")) as "youtube" | "file" | null;
     setSourceVideoUrl(url);
     setSourceType(type);
 
@@ -96,7 +105,7 @@ export default function SplitViewport({
         }
       } catch {}
     }
-  }, []);
+  }, [project]);
 
   // Sync currentGloss with currentTime from transcript
   useEffect(() => {

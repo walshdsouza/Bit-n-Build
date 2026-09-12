@@ -51,6 +51,11 @@ function compile() {
       "--moduleResolution", "node",
       "--skipLibCheck",
       "--esModuleInterop",
+      // lib/dictionaries imports the compiled ISL dataset as JSON.
+      "--resolveJsonModule",
+      // Pin the root so output always lands at <out>/lib/... — importing the
+      // JSON dataset from outside lib/ would otherwise move the common root.
+      "--rootDir", ".",
     ],
     { cwd: root, stdio: "inherit" },
   );

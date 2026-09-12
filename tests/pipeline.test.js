@@ -1,4 +1,4 @@
-const B = __dirname + "/.build";
+const B = __dirname + "/.build/lib";
 const { glossByRules, generateGloss, deriveNMM } = require(B + "/gloss-engine.js");
 const { getProfile } = require(B + "/sign-languages.js");
 const { buildSignPlan, signAt } = require(B + "/sign-plan.js");

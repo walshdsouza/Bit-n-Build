@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/utils/supabase/server';
 import { execFile } from 'child_process';
 import path from 'path';
 import fs from 'fs';
@@ -198,16 +199,58 @@ export async function POST(req: NextRequest) {
           ? data.segments[data.segments.length - 1].end 
           : 0;
 
+        // Save to DB
+        let projectId: string | null = null;
+        let dbError = null;
+        const supabase = await createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: project, error: insertError } = await supabase.from('projects').insert({
+            user_id: user.id,
+            title: `YouTube Video: ${videoId}`,
+            source_type: 'youtube',
+            source_url: url,
+            source_duration: duration,
+            status: 'ready'
+          }).select().single();
+          
+          if (insertError) {
+            console.error("YouTube DB Insert Error:", insertError);
+            dbError = insertError;
+          }
+          
+          if (project) {
+            projectId = project.id;
+            
+            // Insert transcript segments
+            if (data.segments && data.segments.length > 0) {
+              const segmentsToInsert = data.segments.map((s: any, i: number) => ({
+                project_id: projectId,
+                sequence_index: i,
+                start_time: s.start,
+                end_time: s.end,
+                original_text: s.text,
+              }));
+              
+              await supabase.from('transcript_segments').insert(segmentsToInsert);
+            }
+          }
+        } else {
+          dbError = "User not logged in according to supabase.auth.getUser()";
+        }
+
         return NextResponse.json({
           success: true,
           source: 'youtube',
           duration,
           text,
           segments: data.segments,
+          projectId,
           metadata: {
             provider: 'youtube-transcript-api',
             videoId,
-            processedAt: new Date().toISOString()
+            processedAt: new Date().toISOString(),
+            dbError
           }
         });
       } catch (parseError: any) {
@@ -248,12 +291,69 @@ export async function POST(req: NextRequest) {
       // Transcribe via Whisper
       const transcription = await transcribeAudioFile(audioBlob, `${uniqueId}.mp3`, groqKey, openaiKey);
 
+      // Save to DB
+      let projectId: string | null = null;
+      let finalPublicUrl = null;
+      
+      const supabase = await createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (user) {
+        // Upload the video to Supabase Storage
+        // Use a unique file name in the 'media' bucket, under the user's ID
+        const fileExt = file.name.split('.').pop() || 'mp4';
+        const storagePath = `${user.id}/${uniqueId}.${fileExt}`;
+        
+        const { error: uploadError } = await supabase
+          .storage
+          .from('media')
+          .upload(storagePath, buffer, {
+            contentType: file.type || 'video/mp4',
+            upsert: false
+          });
+          
+        if (uploadError) {
+          console.error("Storage upload error:", uploadError);
+          // Proceed anyway but without source_url
+        } else {
+          const { data: publicUrlData } = supabase.storage.from('media').getPublicUrl(storagePath);
+          finalPublicUrl = publicUrlData.publicUrl;
+        }
+
+        const { data: project } = await supabase.from('projects').insert({
+          user_id: user.id,
+          title: file.name,
+          source_type: 'upload',
+          source_url: finalPublicUrl,
+          source_duration: transcription.duration,
+          status: 'ready'
+        }).select().single();
+        
+        if (project) {
+          projectId = project.id;
+          
+          // Insert transcript segments
+          if (transcription.segments && transcription.segments.length > 0) {
+            const segmentsToInsert = transcription.segments.map((s: any, i: number) => ({
+              project_id: projectId,
+              sequence_index: i,
+              start_time: s.start,
+              end_time: s.end,
+              original_text: s.text,
+            }));
+            
+            await supabase.from('transcript_segments').insert(segmentsToInsert);
+          }
+        }
+      }
+
       return NextResponse.json({
         success: true,
         source: 'file',
         duration: transcription.duration,
         text: transcription.text,
         segments: transcription.segments,
+        projectId,
         metadata: {
           provider: transcription.provider,
           filename: file.name,

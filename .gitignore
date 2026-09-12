@@ -49,7 +49,15 @@ __pycache__/
 # test build output
 tests/.build
 
-# sign language datasets (auto-downloaded, do not commit)
+# sign language datasets
+# The raw downloaded .sigml corpora stay out of the repo (large, regenerable),
+# but the COMPILED dictionaries are committed: lib/dictionaries/index.ts
+# imports isl_dictionary.json statically, so without it the build fails on a
+# fresh clone and on the deploy host.
 /public/signs/*.sigml
 /public/signs/lexicon.json
-/data/datasets/
+/data/datasets/*
+!/data/datasets/*_dictionary.json
+
+# local logs
+/logs/
