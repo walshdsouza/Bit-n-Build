@@ -35,6 +35,11 @@ interface NexaAvatarProps {
   fullBody?: boolean;
   /** Called if the model cannot be loaded, so the caller can fall back. */
   onError?: (message: string) => void;
+  /**
+   * Where to fetch the GLB. The web app serves it from /public; the browser
+   * extension has no server, so it passes a browser.runtime.getURL() path.
+   */
+  modelUrl?: string;
 }
 
 const VIEWS = {
@@ -63,6 +68,7 @@ export default function NexaAvatar({
   label,
   fullBody = false,
   onError,
+  modelUrl = "/models/nexa.glb",
 }: NexaAvatarProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef({ plan, currentTime, playing });
@@ -279,7 +285,7 @@ export default function NexaAvatar({
     };
 
     new GLTFLoader().load(
-      "/models/nexa.glb",
+      modelUrl,
       (gltf) => {
         if (disposed) return;
         model = gltf.scene;
@@ -304,7 +310,7 @@ export default function NexaAvatar({
       (e) => {
         if (disposed) return;
         const msg =
-          e instanceof Error ? e.message : "Failed to load /models/nexa.glb";
+          e instanceof Error ? e.message : `Failed to load ${modelUrl}`;
         setFailed(msg);
         errorRef.current?.(msg);
       },
@@ -344,7 +350,7 @@ export default function NexaAvatar({
         mount.removeChild(renderer.domElement);
       }
     };
-  }, [fullBody]);
+  }, [fullBody, modelUrl]);
 
   const displayLabel = label ?? activeGloss;
 

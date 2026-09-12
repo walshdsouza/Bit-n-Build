@@ -1,14 +1,30 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "lib": ["ES2020", "DOM"],
+    "lib": [
+      "ES2020",
+      "DOM"
+    ],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["firefox-webext-browser"]
+    "types": [
+      "firefox-webext-browser"
+    ],
+    "baseUrl": "..",
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    }
   },
-  "include": ["src"]
+  "include": [
+    "src",
+    "../lib/**/*.ts",
+    "../components/player/NexaAvatar.tsx",
+    "../components/player/avatar/*.ts"
+  ]
 }

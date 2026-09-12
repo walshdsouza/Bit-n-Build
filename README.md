@@ -83,6 +83,60 @@ curl -X POST http://localhost:3000/api/translate \
 # → gloss: "YESTERDAY IX-1 SCHOOL GO"
 ```
 
+## Firefox extension
+
+A **standalone** Firefox sidebar that captions Google Meet calls with a signing
+avatar. Standalone means exactly that: it runs no server and does not need the
+web app above. Audio is transcribed by calling Whisper directly with your own
+API key, and glossing, HamNoSys, SiGML and motion planning all run inside the
+extension using the same `lib/` code as the web app.
+
+> **Firefox only.** It uses Manifest V2 and the `sidebar_action` API, neither of
+> which Chrome supports.
+
+### Build
+
+```bash
+cd extension
+npm install
+npm run build
+```
+
+Output goes to `extension/dist/`. Use `npm run watch` while developing — note
+that it only copies the HTML/CSS/model once, so re-run `npm run build` after
+editing those.
+
+### Run it
+
+1. Open `about:debugging#/runtime/this-firefox` in Firefox
+2. Click **Load Temporary Add-on…**
+3. Select `extension/manifest.json`
+4. Open the sidebar with **Ctrl+Shift+G** (or the toolbar button)
+
+A temporary add-on is removed when Firefox restarts; repeat these steps to load
+it again.
+
+### Set an API key
+
+Transcription needs a Groq or OpenAI key — without one, nothing is transcribed.
+Open the extension's **Settings** (the button in the sidebar, or Add-ons
+Manager → GestureSync AI → Preferences), paste a key and choose ASL or ISL.
+Keys are stored in `browser.storage.local` on your machine and are sent only to
+the provider you configured.
+
+### Use it
+
+Join a Google Meet call, open the sidebar and press **Start capture**. The
+avatar signs the speech as it is transcribed.
+
+### Publishing to addons.mozilla.org
+
+Not submitted yet. Before it can be, it needs at minimum: a real add-on id in
+place of `gesturesync-sidebar@REPLACE_ME.example`, an icon set and listing
+copy, and a privacy note covering the API key and the audio sent to the
+transcription provider. AMO also requires reviewable source for the bundled
+`dist/` output.
+
 ## Testing
 
 ```bash

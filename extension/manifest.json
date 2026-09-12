@@ -25,7 +25,8 @@
     "tabs",
     "storage",
     "https://meet.google.com/*",
-    "http://localhost:3000/*"
+    "https://api.groq.com/*",
+    "https://api.openai.com/*"
   ],
 
   "background": {

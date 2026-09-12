@@ -1,10 +1,84 @@
 :root { color-scheme: dark; }
-body { margin: 0; font-family: system-ui, sans-serif; background: #0e0e13; color: #e4e1e9; }
-.panel { padding: 16px; }
-h1 { font-size: 15px; margin: 0 0 12px; }
-button { width: 100%; padding: 10px; border-radius: 8px; border: none;
-  background: linear-gradient(135deg, #0566d9, #06b6d4); color: #001f26;
-  font-weight: 600; cursor: pointer; }
-.error { color: #f87171; font-size: 12px; }
-.transcript { list-style: none; padding: 0; margin-top: 12px; font-size: 13px; }
+
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #0e0e13;
+  color: #e4e1e9;
+}
+
+/* The sidebar is a tall, narrow column: the avatar takes the space it can get
+   and the transcript scrolls beneath it. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 12px;
+  box-sizing: border-box;
+  gap: 10px;
+}
+
+.bar { display: flex; align-items: center; justify-content: space-between; }
+h1 { font-size: 14px; margin: 0; }
+.lang {
+  font: 600 10px/1 ui-monospace, monospace;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #4cd7f61a;
+  color: #4cd7f6;
+}
+
+.avatar {
+  flex: 0 0 auto;
+  height: 42vh;
+  min-height: 220px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: radial-gradient(120% 90% at 50% 15%, #16202b 0%, #0a0e13 70%);
+  border: 1px solid #3d494c40;
+}
+
+.controls { display: flex; gap: 8px; }
+button {
+  flex: 1;
+  padding: 9px;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(135deg, #0566d9, #06b6d4);
+  color: #001f26;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 12px;
+}
+button.secondary {
+  flex: 0 0 auto;
+  padding: 9px 12px;
+  background: #1f272f;
+  color: #a9bcc4;
+}
+button.link {
+  display: inline;
+  width: auto;
+  flex: none;
+  padding: 0;
+  background: none;
+  color: #4cd7f6;
+  font-weight: 600;
+  text-decoration: underline;
+  font-size: inherit;
+}
+
+.hint { margin: 0; font-size: 12px; color: #e0b96a; }
+.error { color: #f87171; font-size: 12px; margin: 0; word-break: break-word; }
+
+.transcript {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 12px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
 .transcript li { padding: 6px 0; border-bottom: 1px solid #3d494c30; }

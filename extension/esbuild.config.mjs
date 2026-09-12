@@ -26,6 +26,11 @@ const staticFiles = [
   ["src/sidebar/sidebar.html", "dist/sidebar.html"],
   ["src/sidebar/sidebar.css", "dist/sidebar.css"],
   ["src/options/options.html", "dist/options.html"],
+  // options.html links this; without it the settings page renders unstyled.
+  ["src/options/options.css", "dist/options.css"],
+  // The avatar model ships inside the extension — it is standalone, so there
+  // is no server to fetch it from.
+  ["../public/models/nexa.glb", "dist/nexa.glb"],
 ];
 
 function copyStatic() {
