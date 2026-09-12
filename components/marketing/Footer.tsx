@@ -6,10 +6,10 @@ export default function Footer() {
           <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary to-secondary-container flex items-center justify-center">
             <span className="material-symbols-outlined text-on-primary text-[14px]">sign_language</span>
           </div>
-          <span className="font-headline-sm text-sm text-on-surface font-semibold">GestureSync AI</span>
+          <span className="font-extrabold text-sm text-on-surface tracking-tight">UNMUTE</span>
         </div>
         <p className="text-xs text-on-surface-variant">
-          © 2026 GestureSync AI. Built for the Deaf and Hard-of-Hearing community.
+          © 2026 UNMUTE. Built for the Deaf and Hard-of-Hearing community.
         </p>
         <div className="flex items-center gap-space-md text-xs text-on-surface-variant">
           <a href="#" className="hover:text-primary transition-colors">Privacy</a>

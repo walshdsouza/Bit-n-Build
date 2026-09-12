@@ -1,11 +1,13 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import AuthModal from "@/components/auth/AuthModal";
 
 export default function MarketingHeader() {
   const [showAuth, setShowAuth] = useState(false);
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
+  const pathname = usePathname();
 
   return (
     <>
@@ -17,16 +19,30 @@ export default function MarketingHeader() {
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-secondary-container flex items-center justify-center shadow-[0_0_15px_rgba(76,215,246,0.4)]">
                 <span className="material-symbols-outlined text-on-primary text-[18px]">sign_language</span>
               </div>
-              <span className="font-headline-sm text-headline-sm text-on-surface tracking-tight font-semibold">GestureSync AI</span>
+              <span className="font-extrabold text-headline-sm text-on-surface tracking-tight">UNMUTE</span>
             </div>
 
-            {/* Nav */}
-            <nav className="hidden md:flex items-center gap-space-md bg-surface-container-lowest/80 px-space-md py-space-xs rounded-full border border-secondary/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]">
-              <Link href="/" className="px-space-sm py-1 transition-colors bg-primary-container text-on-primary-container font-semibold rounded-full text-sm">Home</Link>
-              <Link href="/dashboard" className="font-label-button text-label-button text-on-surface-variant hover:text-on-surface px-space-sm py-1 rounded-full transition-colors">Features</Link>
-              <a href="#" className="font-label-button text-label-button text-on-surface-variant hover:text-on-surface px-space-sm py-1 rounded-full transition-colors">Pricing</a>
-              <a href="#" className="font-label-button text-label-button text-on-surface-variant hover:text-on-surface px-space-sm py-1 rounded-full transition-colors">Docs</a>
-              <a href="#" className="font-label-button text-label-button text-on-surface-variant hover:text-on-surface px-space-sm py-1 rounded-full transition-colors">Blog</a>
+            <nav className="hidden md:flex items-center gap-2 bg-surface-container-lowest/80 px-2 py-1 rounded-full border border-secondary/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]">
+              <Link 
+                href="/" 
+                className={`px-4 py-2 text-sm rounded-full transition-all duration-300 ${
+                  pathname === '/' 
+                    ? 'text-cyan-400 bg-cyan-900/20 drop-shadow-[0_0_8px_rgba(34,211,238,0.5)] [text-shadow:0_0_10px_rgba(34,211,238,0.6)] font-semibold' 
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                Home
+              </Link>
+              <Link 
+                href="/features" 
+                className={`px-4 py-2 text-sm rounded-full transition-all duration-300 ${
+                  pathname === '/features' 
+                    ? 'text-cyan-400 bg-cyan-900/20 drop-shadow-[0_0_8px_rgba(34,211,238,0.5)] [text-shadow:0_0_10px_rgba(34,211,238,0.6)] font-semibold' 
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                Features
+              </Link>
             </nav>
 
             {/* Actions */}
@@ -43,12 +59,6 @@ export default function MarketingHeader() {
               >
                 <span>Try For Free</span>
                 <span className="material-symbols-outlined text-[16px]">north_east</span>
-              </button>
-              <button
-                onClick={() => { setAuthMode("signin"); setShowAuth(true); }}
-                className="w-8 h-8 rounded-full bg-primary flex items-center justify-center"
-              >
-                <span className="material-symbols-outlined text-on-primary text-[18px]">person</span>
               </button>
             </div>
           </div>
