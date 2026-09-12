@@ -86,7 +86,13 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
         setPlanDuration(data.plan.duration);
         setDuration(data.plan.duration);
       }
-      sessionStorage.setItem("signPlan", JSON.stringify(data.plan));
+      // localStorage has a much larger quota (~5-10MB) than sessionStorage (~2.5MB).
+      // The signPlan for a long video can easily exceed sessionStorage limits.
+      try {
+        localStorage.setItem("signPlan", JSON.stringify(data.plan));
+      } catch {
+        // Quota exceeded even for localStorage — silently ignore, plan is still in memory.
+      }
     } catch (e) {
       if (reqId !== requestRef.current) return;
       setError(e instanceof Error ? e.message : "Translation failed");

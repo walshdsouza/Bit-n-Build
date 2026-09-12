@@ -136,10 +136,25 @@ function wristRotation(h: HandConfig, mirror: boolean): Vec3 {
   const d = DIR_VECTORS[h.extFingerDir];
   const p = DIR_VECTORS[h.palmOr as ExtFingerDir] ?? DIR_VECTORS.o;
 
-  // Point the hand along `d`, then roll so the palm faces `p`.
-  const pitch = Math.asin(Math.max(-1, Math.min(1, d.y))) - Math.PI / 2;
+  // Pitch: angle in the YZ plane from +Y to d.
+  // atan2(d.z, d.y) correctly gives:
+  //   dir:u  (0, 1, 0)  → 0        (no rotation, fingers stay up)
+  //   dir:o  (0, 0, 1)  → +π/2    (tilt fingers toward viewer)
+  //   dir:d  (0,-1, 0)  → ±π      (fingers point down)
+  //   dir:i  (0, 0,-1)  → -π/2    (tilt fingers away from viewer)
+  // The old formula (asin(d.y) - π/2) had the wrong sign for all non-vertical directions.
+  const pitch = Math.atan2(d.z, d.y);
+
+  // Yaw: horizontal azimuth of d in the XZ plane.
   const yaw = Math.atan2(d.x, d.z);
-  const roll = Math.atan2(p.x, p.y);
+
+  // Roll: palm facing direction around the finger axis.
+  // atan2(-p.x, p.z) maps:
+  //   palm:o  (0, 0, 1)  → 0      (palm toward viewer — default, no roll)
+  //   palm:i  (0, 0,-1)  → ±π    (palm away from viewer)
+  //   palm:l  (-1,0, 0)  → +π/2  (palm faces signer's left)
+  //   palm:r  (1, 0, 0)  → -π/2  (palm faces signer's right)
+  const roll = Math.atan2(-p.x, p.z);
 
   return v(pitch, mirror ? -yaw : yaw, mirror ? -roll : roll);
 }
@@ -232,10 +247,10 @@ export function solveFace(nmm: string | undefined, intensity = 0.7, t = 0): Face
   }
 }
 
-/** Hands rest close to the body at waist height, ready to move into signing space. */
+/** Neutral signing rest: hands in front of the body at waist height, palms facing the viewer. */
 const REST_RIGHT: HandPose = {
-  pos: v(0.19, 0.97, 0.14),
-  rot: v(-0.45, 0, 0.1),
+  pos: v(0.22, 1.08, 0.30),
+  rot: v(-0.55, 0, 0.15),
   curl: [0.3, 0.28, 0.28, 0.28, 0.28],
   spread: 0.2,
   visible: true,
@@ -243,8 +258,8 @@ const REST_RIGHT: HandPose = {
 
 const REST_LEFT: HandPose = {
   ...REST_RIGHT,
-  pos: v(-0.19, 0.97, 0.14),
-  rot: v(-0.45, 0, -0.1),
+  pos: v(-0.22, 1.08, 0.30),
+  rot: v(-0.55, 0, -0.15),
 };
 
 export function restPose(): AvatarPose {
