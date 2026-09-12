@@ -10,13 +10,13 @@ const breadcrumbMap: Record<string, string> = {
 
 export default function TopBar() {
   const pathname = usePathname();
-  const title = breadcrumbMap[pathname] ?? (pathname.startsWith("/player") ? "Translation Player" : "GestureSync AI");
+  const title = breadcrumbMap[pathname] ?? (pathname.startsWith("/player") ? "Translation Player" : "UNMUTE");
 
   return (
     <header className="h-14 flex items-center gap-4 px-space-md border-b border-outline-variant/30 bg-surface-container-lowest/60 backdrop-blur-sm sticky top-0 z-30">
       {/* Title */}
       <div className="flex items-center gap-2">
-        <span className="text-on-surface-variant text-sm">GestureSync</span>
+        <span className="text-on-surface-variant text-sm font-extrabold tracking-tight">UNMUTE</span>
         <span className="text-outline">/</span>
         <span className="text-on-surface text-sm font-semibold">{title}</span>
       </div>

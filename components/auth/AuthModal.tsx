@@ -64,7 +64,7 @@ export default function AuthModal({ mode, onClose, onModeChange }: AuthModalProp
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-secondary-container flex items-center justify-center shadow-[0_0_15px_rgba(76,215,246,0.4)]">
               <span className="material-symbols-outlined text-on-primary text-[18px]">sign_language</span>
             </div>
-            <span className="font-headline-sm text-headline-sm text-on-surface font-semibold">GestureSync AI</span>
+            <span className="font-extrabold text-headline-sm text-on-surface tracking-tight">UNMUTE</span>
           </div>
 
           {/* Tab toggle */}
@@ -147,7 +147,7 @@ export default function AuthModal({ mode, onClose, onModeChange }: AuthModalProp
               {isPending ? (
                 <span className="w-4 h-4 rounded-full border-2 border-on-primary/30 border-t-on-primary animate-spin" />
               ) : null}
-              <span>{mode === "signin" ? "Sign In to GestureSync" : "Create Free Account"}</span>
+              <span>{mode === "signin" ? "Sign In to UNMUTE" : "Create Free Account"}</span>
             </button>
           </form>
 

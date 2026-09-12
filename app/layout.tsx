@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "GestureSync AI — Real-Time ASL Sign Language Translation",
+  title: "UNMUTE — Real-Time ASL Sign Language Translation",
   description:
     "Transform any spoken audio, recorded video, or live conferencing call into real-time, expressive 3D American Sign Language avatars via an ultra-low-latency LLM semantic glossing pipeline.",
   keywords: ["ASL", "sign language", "accessibility", "AI", "deaf", "HoH"],
