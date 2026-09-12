@@ -1,5 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import SignAvatar from "./SignAvatar";
+import { SignPlan } from "@/lib/types";
 
 declare global {
   interface Window {
@@ -14,6 +16,10 @@ interface SplitViewportProps {
   onTimeUpdate: (t: number) => void;
   onDurationChange: (d: number) => void;
   onPlayPause: () => void;
+  /** Timed motion plan driving the 3D avatar. */
+  plan?: SignPlan | null;
+  /** Target sign language label for the source badges. */
+  lang?: string;
 }
 
 function getYouTubeId(url: string): string | null {
@@ -27,6 +33,8 @@ export default function SplitViewport({
   onTimeUpdate,
   onDurationChange,
   onPlayPause,
+  plan = null,
+  lang = "ASL",
 }: SplitViewportProps) {
   const [splitPos, setSplitPos] = useState(50);
   const [sourceVideoUrl, setSourceVideoUrl] = useState<string | null>(null);
@@ -195,7 +203,7 @@ export default function SplitViewport({
 
           {/* Metadata badges */}
           <div className="flex flex-wrap gap-1 justify-center">
-            {["Whisper V3", "en-US", sourceType === "youtube" ? "YouTube" : "Local File"].map((tag) => (
+            {["Whisper V3", `en → ${lang}`, sourceType === "youtube" ? "YouTube" : "Local File"].map((tag) => (
               <span
                 key={tag}
                 className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant border border-outline-variant/30"
@@ -237,35 +245,29 @@ export default function SplitViewport({
         </div>
       </div>
 
-      {/* Right pane — CWASA Avatar */}
-      <div className="flex-1 bg-[#060a0f] flex flex-col items-center justify-center relative overflow-hidden">
+      {/* Right pane — 3D signing avatar */}
+      <div className="flex-1 bg-[#060a0f] flex flex-col relative overflow-hidden">
         <div className="absolute inset-0 bg-blueprint-cyan opacity-40" />
-        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-72 h-72 bg-primary/10 blur-3xl rounded-full" />
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-72 h-72 bg-primary/10 blur-3xl rounded-full pointer-events-none" />
 
-        <div className="relative z-10 flex flex-col items-center gap-4">
-          <div
-            id="cwasa-viewport"
-            className="w-48 h-48 md:w-64 md:h-64 rounded-full bg-gradient-to-b from-primary/20 to-secondary-container/20 border-2 border-primary/30 shadow-[0_0_60px_rgba(76,215,246,0.3)] flex items-center justify-center relative overflow-hidden"
-          >
-            <span className="material-symbols-outlined text-primary text-[80px] opacity-60">sign_language</span>
-            <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-transparent via-primary/60 to-transparent animate-[pulse_2s_ease-in-out_infinite]" />
-          </div>
-
-          <div className="text-center max-w-xs px-4">
-            <p className="font-mono text-primary font-bold text-sm truncate">{currentGloss}</p>
-            <p className="text-xs text-on-surface-variant mt-0.5">SOV Gloss · wh-question_browDown</p>
-          </div>
-
-          <div className="flex items-center gap-3 text-[10px] font-mono text-on-surface-variant">
-            <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary">60fps</span>
-            <span className="px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant">SiGML ✓</span>
-            <span className="px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant">NMM live</span>
-          </div>
+        <div className="relative z-10 flex-1 min-h-0">
+          <SignAvatar
+            plan={plan}
+            currentTime={currentTime}
+            playing={playing}
+            label={plan ? undefined : currentGloss}
+          />
         </div>
 
-        <div className="absolute bottom-4 right-4 flex items-center gap-1.5 text-xs text-primary font-mono">
+        {!plan && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 px-3 py-1 rounded-full bg-surface-container/80 backdrop-blur-md text-[10px] font-mono text-on-surface-variant border border-outline-variant/30">
+            Idle — run a translation to drive the avatar
+          </div>
+        )}
+
+        <div className="absolute bottom-4 right-4 flex items-center gap-1.5 text-xs text-primary font-mono z-20 pointer-events-none">
           <span className="material-symbols-outlined text-[14px]">view_in_ar</span>
-          CWASA Avatar
+          {lang} Avatar
         </div>
       </div>
     </div>
