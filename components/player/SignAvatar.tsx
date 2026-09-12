@@ -3,214 +3,51 @@
 /**
  * 3D signing avatar.
  *
- * Replaces the static placeholder that used to sit in the right-hand pane.
- * A procedural humanoid rig is built in three.js and driven every frame by
- * `lib/avatar/pose-solver`, which turns HamNoSys primitives into skeletal
- * targets. Two-bone IK places the hands at the anatomical locations a sign
- * specifies (mouth, forehead, weak palm, neutral space…), fingers articulate
- * from the handshape's curl profile, and the face carries the non-manual
- * marker.
+ * A full-body procedural character (see `avatar/buildCharacter.ts`) driven every
+ * frame by `lib/avatar/pose-solver`, which turns HamNoSys primitives into
+ * skeletal targets. Two-bone IK places the hands at the anatomical locations a
+ * sign specifies, fingers articulate from the handshape's curl profile, and the
+ * face carries the non-manual marker.
  *
- * The rig is procedural on purpose: it needs no downloaded character asset, so
- * the avatar works offline and on first clone. If a VRM character is present at
- * `/avatars/signer.vrm` it is loaded instead and driven by the same pose data.
+ * The character is procedural on purpose: it needs no downloaded asset, so the
+ * avatar works offline and on first clone.
  */
 
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { SignPlan, SignPlanItem } from "@/lib/types";
 import { AvatarPose, lerpPose, restPose, solvePose } from "@/lib/avatar/pose-solver";
+import {
+  buildCharacter,
+  FOREARM,
+  HandRig,
+  Rig,
+  UPPER_ARM,
+} from "./avatar/buildCharacter";
 
 interface SignAvatarProps {
   plan: SignPlan | null;
   currentTime: number;
   playing: boolean;
-  /** Shown under the avatar; falls back to the active gloss. */
   label?: string;
+  /** Initial framing; the viewer can toggle it. */
+  fullBody?: boolean;
 }
 
-/* ---------------------------------------------------------------- *
- * Rig construction
- * ---------------------------------------------------------------- */
-
-const SKIN = 0x93c9d8;
-const ACCENT = 0x4cd7f6;
-const DARK = 0x18323f;
-
-const UPPER_ARM = 0.29;
-const FOREARM = 0.27;
-
-interface FingerBones {
-  root: THREE.Group;
-  joints: THREE.Group[];
-}
-
-interface HandRig {
-  group: THREE.Group;
-  fingers: FingerBones[];
-}
-
-interface Rig {
-  root: THREE.Group;
-  head: THREE.Group;
-  browL: THREE.Mesh;
-  browR: THREE.Mesh;
-  mouth: THREE.Mesh;
-  upperArmR: THREE.Mesh;
-  foreArmR: THREE.Mesh;
-  upperArmL: THREE.Mesh;
-  foreArmL: THREE.Mesh;
-  handR: HandRig;
-  handL: HandRig;
-}
-
-function mat(color: number, opts: Partial<THREE.MeshStandardMaterialParameters> = {}) {
-  return new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.55,
-    metalness: 0.15,
-    ...opts,
-  });
-}
-
-function buildFinger(
-  parent: THREE.Object3D,
-  x: number,
-  z: number,
-  length: number,
-  material: THREE.Material,
-): FingerBones {
-  const root = new THREE.Group();
-  root.position.set(x, 0.02, z);
-  parent.add(root);
-
-  const joints: THREE.Group[] = [];
-  let current: THREE.Object3D = root;
-  const seg = length / 3;
-
-  for (let i = 0; i < 3; i++) {
-    const joint = new THREE.Group();
-    joint.position.y = i === 0 ? 0 : seg;
-    current.add(joint);
-
-    const bone = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.009 - i * 0.0015, seg * 0.7, 3, 6),
-      material,
-    );
-    bone.position.y = seg / 2;
-    joint.add(bone);
-
-    joints.push(joint);
-    current = joint;
-  }
-  return { root, joints };
-}
-
-function buildHand(material: THREE.Material): HandRig {
-  const group = new THREE.Group();
-
-  const palm = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.085, 0.025), material);
-  palm.position.y = 0.035;
-  group.add(palm);
-
-  const fingers: FingerBones[] = [];
-  // Index → pinky across the palm.
-  const xs = [-0.026, -0.009, 0.009, 0.026];
-  const lens = [0.072, 0.078, 0.07, 0.056];
-  xs.forEach((x, i) => {
-    const f = buildFinger(group, x, 0, lens[i], material);
-    f.root.position.y = 0.075;
-    fingers.push(f);
-  });
-
-  // Thumb: offset to the side and rotated out of the palm plane.
-  const thumb = buildFinger(group, -0.042, 0.012, 0.055, material);
-  thumb.root.position.y = 0.025;
-  thumb.root.rotation.z = 0.9;
-  thumb.root.rotation.x = -0.35;
-
-  // Solver order is [thumb, index, middle, ring, pinky].
-  return { group, fingers: [thumb, ...fingers] };
-}
-
-function buildRig(): Rig {
-  const root = new THREE.Group();
-  const skin = mat(SKIN);
-  const cloth = mat(DARK, { roughness: 0.8, metalness: 0.05 });
-
-  // Torso — tapered so the silhouette reads as shoulders-to-waist.
-  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.142, 0.112, 0.40, 20, 1), cloth);
-  torso.position.y = 1.14;
-  root.add(torso);
-
-  const chest = new THREE.Mesh(new THREE.SphereGeometry(0.145, 20, 16), cloth);
-  chest.scale.set(1, 0.62, 0.82);
-  chest.position.y = 1.30;
-  root.add(chest);
-
-  const hips = new THREE.Mesh(new THREE.SphereGeometry(0.122, 16, 12), cloth);
-  hips.scale.set(1, 0.8, 0.9);
-  hips.position.y = 0.93;
-  root.add(hips);
-
-  // Neck + head
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.08, 12), skin);
-  neck.position.y = 1.42;
-  root.add(neck);
-
-  const head = new THREE.Group();
-  head.position.y = 1.47;
-  root.add(head);
-
-  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.105, 24, 20), skin);
-  skull.scale.set(1, 1.15, 0.95);
-  skull.position.y = 0.085;
-  head.add(skull);
-
-  const eyeGeo = new THREE.SphereGeometry(0.016, 12, 10);
-  const eyeMat = mat(0x0b1a22, { roughness: 0.25 });
-  [-0.04, 0.04].forEach((x) => {
-    const eye = new THREE.Mesh(eyeGeo, eyeMat);
-    eye.position.set(x, 0.095, 0.09);
-    head.add(eye);
-  });
-
-  const browMat = mat(0x0b1a22, { roughness: 0.9 });
-  const browGeo = new THREE.BoxGeometry(0.034, 0.007, 0.012);
-  const browL = new THREE.Mesh(browGeo, browMat);
-  browL.position.set(-0.04, 0.125, 0.092);
-  head.add(browL);
-  const browR = new THREE.Mesh(browGeo, browMat);
-  browR.position.set(0.04, 0.125, 0.092);
-  head.add(browR);
-
-  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.01, 0.012), browMat);
-  mouth.position.set(0, 0.035, 0.094);
-  head.add(mouth);
-
-  // Shoulders
-  [-1, 1].forEach((s) => {
-    const sh = new THREE.Mesh(new THREE.SphereGeometry(0.05, 14, 12), cloth);
-    sh.position.set(0.175 * s, 1.33, 0);
-    root.add(sh);
-  });
-
-  // Arms — positioned each frame by IK, so geometry is created unparented.
-  const armGeoU = new THREE.CapsuleGeometry(0.042, UPPER_ARM * 0.72, 4, 12);
-  const armGeoF = new THREE.CapsuleGeometry(0.036, FOREARM * 0.72, 4, 12);
-
-  const upperArmR = new THREE.Mesh(armGeoU, skin);
-  const foreArmR = new THREE.Mesh(armGeoF, skin);
-  const upperArmL = new THREE.Mesh(armGeoU, skin);
-  const foreArmL = new THREE.Mesh(armGeoF, skin);
-  root.add(upperArmR, foreArmR, upperArmL, foreArmL);
-
-  const handR = buildHand(skin);
-  const handL = buildHand(skin);
-  root.add(handR.group, handL.group);
-
-  return { root, head, browL, browR, mouth, upperArmR, foreArmR, upperArmL, foreArmL, handR, handL };
-}
+/**
+ * Camera framings. "Signing" is the default because brow and mouth position
+ * are grammatical in sign languages — at whole-body distance the face is only
+ * a few pixels tall and those markers become unreadable.
+ */
+const VIEWS = {
+  signing: { y: 1.20, targetY: 1.16, dist: 1.95 },
+  full: { y: 1.12, targetY: 0.98, dist: 3.30 },
+} as const;
 
 /* ---------------------------------------------------------------- *
  * IK + pose application
@@ -230,16 +67,16 @@ function spanCapsule(mesh: THREE.Mesh, from: THREE.Vector3, to: THREE.Vector3) {
   mesh.position.copy(from).addScaledVector(_dir, 0.5);
   _dir.divideScalar(len);
   mesh.quaternion.setFromUnitVectors(UP, _dir);
-  // Capsules are authored at a nominal length; stretch to fit the bone.
-  const nominal = mesh.geometry instanceof THREE.CapsuleGeometry
-    ? (mesh.geometry.parameters.height ?? 1) + 2 * (mesh.geometry.parameters.radius ?? 0)
-    : 1;
+  const params =
+    mesh.geometry instanceof THREE.CapsuleGeometry ? mesh.geometry.parameters : null;
+  const nominal = params ? (params.height ?? 1) + 2 * (params.radius ?? 0) : 1;
   mesh.scale.y = len / nominal;
 }
 
 /**
  * Two-bone IK. Solves elbow placement for a hand target, with a pole hint that
- * keeps elbows pointing down-and-out the way human arms actually bend.
+ * keeps elbows dropping down and slightly behind the torso the way human arms
+ * actually hang.
  */
 function solveArm(
   shoulder: THREE.Vector3,
@@ -259,14 +96,10 @@ function solveArm(
   }
   dist = Math.max(dist, 1e-4);
 
-  // Angle between the upper arm and the shoulder→target line.
   const cos = Math.min(1, Math.max(-1, (l1 * l1 + dist * dist - l2 * l2) / (2 * l1 * dist)));
   const alpha = Math.acos(cos);
 
   _dir.copy(_a).divideScalar(dist);
-  // Pole: elbows drop down and tuck slightly behind the torso. Keeping the
-  // lateral term small stops the elbow swinging wide when the hand is close to
-  // the shoulder, which is the common case for a resting non-dominant hand.
   _b.set(side * 0.22, -1, -0.5).normalize();
   _axis.crossVectors(_dir, _b);
   if (_axis.lengthSq() < 1e-6) _axis.set(0, 0, side);
@@ -276,31 +109,30 @@ function solveArm(
   out.copy(_dir).applyQuaternion(_q).multiplyScalar(l1).add(shoulder);
 }
 
-function applyFingers(hand: HandRig, curl: readonly number[], spread: number) {
+function applyFingers(hand: HandRig, curl: readonly number[], spread: number, side: 1 | -1) {
   hand.fingers.forEach((finger, i) => {
     const c = curl[i] ?? 0;
     finger.joints.forEach((joint, j) => {
-      // Distal joints curl slightly more than proximal ones.
       joint.rotation.x = -c * (j === 0 ? 1.25 : j === 1 ? 1.05 : 0.85);
     });
     if (i > 0) {
-      // Fan the four fingers apart.
-      finger.root.rotation.z = (i - 2.5) * spread * 0.12;
+      finger.root.rotation.z = (i - 2.5) * spread * 0.12 * side;
     }
   });
 }
 
-const _shoulderR = new THREE.Vector3(0.175, 1.33, 0);
-const _shoulderL = new THREE.Vector3(-0.175, 1.33, 0);
+const _shoulderR = new THREE.Vector3(0.175, 1.328, 0);
+const _shoulderL = new THREE.Vector3(-0.175, 1.328, 0);
 const _elbow = new THREE.Vector3();
 const _target = new THREE.Vector3();
 
-function applyPose(rig: Rig, pose: AvatarPose) {
+function applyPose(rig: Rig, pose: AvatarPose, blink: number) {
   const arm = (
-    handPose: typeof pose.right,
+    handPose: AvatarPose["right"],
     shoulder: THREE.Vector3,
     upper: THREE.Mesh,
     fore: THREE.Mesh,
+    elbowMesh: THREE.Mesh,
     hand: HandRig,
     side: 1 | -1,
   ) => {
@@ -308,31 +140,42 @@ function applyPose(rig: Rig, pose: AvatarPose) {
     solveArm(shoulder, _target, UPPER_ARM, FOREARM, side, _elbow);
     spanCapsule(upper, shoulder, _elbow);
     spanCapsule(fore, _elbow, _target);
+    elbowMesh.position.copy(_elbow);
 
     hand.group.position.copy(_target);
     hand.group.rotation.set(handPose.rot.x, handPose.rot.y, handPose.rot.z);
-    applyFingers(hand, handPose.curl, handPose.spread);
+    applyFingers(hand, handPose.curl, handPose.spread, side);
   };
 
-  arm(pose.right, _shoulderR, rig.upperArmR, rig.foreArmR, rig.handR, 1);
-  arm(pose.left, _shoulderL, rig.upperArmL, rig.foreArmL, rig.handL, -1);
+  arm(pose.right, _shoulderR, rig.upperArmR, rig.foreArmR, rig.elbowR, rig.handR, 1);
+  arm(pose.left, _shoulderL, rig.upperArmL, rig.foreArmL, rig.elbowL, rig.handL, -1);
 
-  // Face / non-manual markers
   const f = pose.face;
   rig.head.rotation.set(f.headPitch, f.headYaw, f.headRoll);
-  rig.browL.position.y = 0.125 + f.brow * 0.014;
-  rig.browR.position.y = 0.125 + f.brow * 0.014;
-  rig.browL.rotation.z = f.brow * 0.25;
-  rig.browR.rotation.z = -f.brow * 0.25;
-  rig.mouth.scale.y = 1 + f.mouth * 5;
-  rig.mouth.scale.x = 1 - f.mouth * 0.25;
+
+  rig.browL.position.y = 0.121 + f.brow * 0.014;
+  rig.browR.position.y = 0.121 + f.brow * 0.014;
+  rig.browL.rotation.z = f.brow * 0.22;
+  rig.browR.rotation.z = -f.brow * 0.22;
+
+  rig.mouth.scale.y = 1 + f.mouth * 5.5;
+  rig.mouth.scale.x = 1 - f.mouth * 0.22;
+
+  // Eyelids: raised brows open the eyes, and `blink` closes them.
+  const open = Math.max(0, 1 - blink) * (1 - Math.max(0, -f.brow) * 0.35);
+  const lidRot = -Math.PI * 0.5 * open + Math.PI * 0.1;
+  rig.lidL.rotation.x = lidRot;
+  rig.lidR.rotation.x = lidRot;
 }
 
 /* ---------------------------------------------------------------- *
  * Component
  * ---------------------------------------------------------------- */
 
-function activeSign(plan: SignPlan | null, t: number): { item: SignPlanItem | null; progress: number } {
+function activeSign(
+  plan: SignPlan | null,
+  t: number,
+): { item: SignPlanItem | null; progress: number } {
   if (!plan?.items.length) return { item: null, progress: 0 };
   for (const it of plan.items) {
     if (t >= it.startTime && t < it.endTime) {
@@ -343,69 +186,147 @@ function activeSign(plan: SignPlan | null, t: number): { item: SignPlanItem | nu
   return { item: null, progress: 0 };
 }
 
-export default function SignAvatar({ plan, currentTime, playing, label }: SignAvatarProps) {
+export default function SignAvatar({
+  plan,
+  currentTime,
+  playing,
+  label,
+  fullBody = true,
+}: SignAvatarProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef({ plan, currentTime, playing });
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const [ready, setReady] = useState(false);
   const [fps, setFps] = useState(0);
   const [activeGloss, setActiveGloss] = useState("—");
+  const [view, setView] = useState<keyof typeof VIEWS>(fullBody ? "full" : "signing");
 
-  // Keep the render loop reading fresh props without re-creating the scene.
   useEffect(() => {
     stateRef.current = { plan, currentTime, playing };
   }, [plan, currentTime, playing]);
+
+  // Reframe without tearing down the scene.
+  useEffect(() => {
+    const cam = cameraRef.current;
+    if (!cam) return;
+    const v = VIEWS[view];
+    cam.position.set(0, v.y, v.dist);
+    cam.lookAt(0, v.targetY, 0);
+  }, [view, ready]);
 
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
 
     const scene = new THREE.Scene();
-    scene.background = null;
 
-    // Framed on the signing space: mid-chest to just above the head, which is
-    // where sign languages place nearly all articulation.
-    const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 50);
-    camera.position.set(0, 1.24, 2.45);
-    camera.lookAt(0, 1.12, 0);
+    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
+    const v0 = VIEWS[fullBody ? "full" : "signing"];
+    camera.position.set(0, v0.y, v0.dist);
+    camera.lookAt(0, v0.targetY, 0);
+    cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Filmic tone mapping keeps highlights from clipping to flat white, which
+    // is most of what separates "3D render" from "plastic toy".
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
     mount.appendChild(renderer.domElement);
-    renderer.domElement.style.width = "100%";
-    renderer.domElement.style.height = "100%";
-    renderer.domElement.style.display = "block";
+    Object.assign(renderer.domElement.style, {
+      width: "100%",
+      height: "100%",
+      display: "block",
+      cursor: "grab",
+      touchAction: "none",
+    });
 
-    // Lighting — keyed to the app's cyan accent.
-    scene.add(new THREE.HemisphereLight(0x9fd9ec, 0x0a1219, 1.1));
-    const key = new THREE.DirectionalLight(0xffffff, 1.5);
-    key.position.set(1.4, 2.6, 2.2);
+    // Image-based lighting: a room environment gives the skin and fabric real
+    // directional variation instead of flat ambient.
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
+    scene.environment = envRT.texture;
+    scene.environmentIntensity = 0.45;
+
+    // Three-point studio lighting. Intensities are kept moderate because the
+    // bloom threshold below discriminates on linear HDR brightness.
+    const key = new THREE.DirectionalLight(0xfff3e6, 1.7);
+    key.position.set(1.6, 2.9, 2.4);
     key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.camera.near = 0.5;
+    key.shadow.camera.far = 8;
+    key.shadow.camera.left = -1.4;
+    key.shadow.camera.right = 1.4;
+    key.shadow.camera.top = 2.4;
+    key.shadow.camera.bottom = -0.4;
+    key.shadow.bias = -0.0012;
+    key.shadow.normalBias = 0.02;
     scene.add(key);
-    const rim = new THREE.DirectionalLight(ACCENT, 1.1);
-    rim.position.set(-1.8, 1.4, -1.6);
+
+    const fill = new THREE.DirectionalLight(0xbfe4f5, 0.5);
+    fill.position.set(-2.2, 1.5, 1.4);
+    scene.add(fill);
+
+    // Cyan rim to match the app's accent and separate the figure from the bg.
+    const rim = new THREE.DirectionalLight(0x4cd7f6, 1.3);
+    rim.position.set(-1.4, 2.0, -2.4);
     scene.add(rim);
 
-    const rig = buildRig();
+    scene.add(new THREE.HemisphereLight(0xa8dcec, 0x101820, 0.32));
+
+    const rig = buildCharacter();
     scene.add(rig.root);
 
-    // Ground disc to catch the shadow.
-    const ground = new THREE.Mesh(
-      new THREE.CircleGeometry(1.1, 48),
-      new THREE.ShadowMaterial({ opacity: 0.28 }),
-    );
+    // Backdrop: a large dim panel with a soft halo behind the figure, which is
+    // what stops the character reading as floating in a void.
+    const haloCanvas = document.createElement("canvas");
+    haloCanvas.width = haloCanvas.height = 256;
+    const hctx = haloCanvas.getContext("2d")!;
+    const hgrad = hctx.createRadialGradient(128, 128, 10, 128, 128, 128);
+    hgrad.addColorStop(0, "rgba(120,175,205,0.34)");
+    hgrad.addColorStop(0.55, "rgba(50,95,125,0.12)");
+    hgrad.addColorStop(1, "rgba(8,14,20,0)");
+    hctx.fillStyle = hgrad;
+    hctx.fillRect(0, 0, 256, 256);
+    const haloTex = new THREE.CanvasTexture(haloCanvas);
+    const haloGeo = new THREE.PlaneGeometry(3.2, 3.2);
+    const haloMat = new THREE.MeshBasicMaterial({
+      map: haloTex, transparent: true, depthWrite: false,
+    });
+    const halo = new THREE.Mesh(haloGeo, haloMat);
+    halo.position.set(0, 1.28, -1.5);
+    scene.add(halo);
+
+    // Shadow-catching ground.
+    const groundGeo = new THREE.CircleGeometry(1.6, 64);
+    const groundMat = new THREE.ShadowMaterial({ opacity: 0.34 });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
-    ground.position.y = 0.62;
+    ground.position.y = 0.001;
     ground.receiveShadow = true;
     scene.add(ground);
 
-    rig.root.traverse((o) => {
-      if (o instanceof THREE.Mesh) {
-        o.castShadow = true;
-      }
+    // Soft radial pool under the feet so the figure feels grounded.
+    const poolGeo = new THREE.CircleGeometry(0.62, 48);
+    const poolCanvas = document.createElement("canvas");
+    poolCanvas.width = poolCanvas.height = 128;
+    const pctx = poolCanvas.getContext("2d")!;
+    const grad = pctx.createRadialGradient(64, 64, 4, 64, 64, 64);
+    grad.addColorStop(0, "rgba(76,215,246,0.30)");
+    grad.addColorStop(1, "rgba(76,215,246,0)");
+    pctx.fillStyle = grad;
+    pctx.fillRect(0, 0, 128, 128);
+    const poolTex = new THREE.CanvasTexture(poolCanvas);
+    const poolMat = new THREE.MeshBasicMaterial({
+      map: poolTex, transparent: true, depthWrite: false,
     });
+    const pool = new THREE.Mesh(poolGeo, poolMat);
+    pool.rotation.x = -Math.PI / 2;
+    pool.position.y = 0.002;
+    scene.add(pool);
 
     // Drag to orbit.
     let yaw = 0;
@@ -414,6 +335,7 @@ export default function SignAvatar({ plan, currentTime, playing, label }: SignAv
     const onDown = (e: PointerEvent) => {
       dragging = true;
       lastX = e.clientX;
+      renderer.domElement.style.cursor = "grabbing";
       renderer.domElement.setPointerCapture(e.pointerId);
     };
     const onMove = (e: PointerEvent) => {
@@ -423,22 +345,38 @@ export default function SignAvatar({ plan, currentTime, playing, label }: SignAv
     };
     const onUp = (e: PointerEvent) => {
       dragging = false;
+      renderer.domElement.style.cursor = "grab";
       try {
         renderer.domElement.releasePointerCapture(e.pointerId);
       } catch {
-        /* pointer already released */
+        /* already released */
       }
     };
     renderer.domElement.addEventListener("pointerdown", onDown);
     renderer.domElement.addEventListener("pointermove", onMove);
     renderer.domElement.addEventListener("pointerup", onUp);
-    renderer.domElement.style.cursor = "grab";
-    renderer.domElement.style.touchAction = "none";
+
+    // Bloom. Passes render into a half-float target, so the values the bloom
+    // threshold sees are linear HDR — not the tone-mapped 0..1 the canvas gets.
+    // The threshold therefore has to sit ABOVE the brightness of lit white
+    // shell (~1.5) but below the emissive trim (~2.5), or the whole character
+    // blooms into a white blob instead of just the glowing rings.
+    const hdrTarget = new THREE.WebGLRenderTarget(1, 1, {
+      type: THREE.HalfFloatType,
+      samples: 2,
+    });
+    const composer = new EffectComposer(renderer, hdrTarget);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.75, 0.45, 1.75);
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
 
     const resize = () => {
       const w = mount.clientWidth || 1;
       const h = mount.clientHeight || 1;
       renderer.setSize(w, h, false);
+      composer.setSize(w, h);
+      bloom.setSize(w, h);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
     };
@@ -446,34 +384,42 @@ export default function SignAvatar({ plan, currentTime, playing, label }: SignAv
     const ro = new ResizeObserver(resize);
     ro.observe(mount);
 
-    // Animation loop: solve the active sign's pose and blend toward it.
     let raf = 0;
     let current: AvatarPose = restPose();
     let frames = 0;
     let fpsClock = performance.now();
     let lastGloss = "";
+    let nextBlink = performance.now() + 2200;
+    let blinkUntil = 0;
     const clock = new THREE.Clock();
 
     const tick = () => {
       raf = requestAnimationFrame(tick);
       const dt = Math.min(clock.getDelta(), 0.1);
+      const now = performance.now();
       const { plan: p, currentTime: t, playing: isPlaying } = stateRef.current;
 
       const { item, progress } = activeSign(p, t);
       const target = solvePose(item, progress);
 
-      // Critically-damped-ish blend keeps transitions readable rather than snappy.
       const k = Math.min(1, dt * (isPlaying ? 14 : 8));
       current = lerpPose(current, target, k);
-      applyPose(rig, current);
 
-      // Idle breathing when nothing is being signed.
-      if (!item) {
-        rig.root.position.y = Math.sin(performance.now() * 0.0012) * 0.008;
+      // Idle blink — cheap, and its absence is uncanny.
+      if (now > nextBlink) {
+        blinkUntil = now + 130;
+        nextBlink = now + 2400 + Math.random() * 3200;
       }
+      const blink = now < blinkUntil ? Math.sin(((blinkUntil - now) / 130) * Math.PI) : 0;
 
-      rig.root.rotation.y = yaw;
-      renderer.render(scene, camera);
+      applyPose(rig, current, blink);
+
+      // Breathing / weight shift when idle.
+      const breathe = Math.sin(now * 0.0011) * 0.006;
+      rig.root.position.y = item ? breathe * 0.35 : breathe;
+      rig.root.rotation.y = yaw + (item ? 0 : Math.sin(now * 0.0004) * 0.03);
+
+      composer.render();
 
       const gloss = item?.fingerspell ?? item?.gloss ?? "—";
       if (gloss !== lastGloss) {
@@ -482,7 +428,6 @@ export default function SignAvatar({ plan, currentTime, playing, label }: SignAv
       }
 
       frames++;
-      const now = performance.now();
       if (now - fpsClock >= 1000) {
         setFps(Math.round((frames * 1000) / (now - fpsClock)));
         frames = 0;
@@ -499,20 +444,25 @@ export default function SignAvatar({ plan, currentTime, playing, label }: SignAv
       renderer.domElement.removeEventListener("pointerdown", onDown);
       renderer.domElement.removeEventListener("pointermove", onMove);
       renderer.domElement.removeEventListener("pointerup", onUp);
+      rig.dispose();
+      composer.dispose();
+      haloGeo.dispose();
+      haloMat.dispose();
+      haloTex.dispose();
+      groundGeo.dispose();
+      groundMat.dispose();
+      poolGeo.dispose();
+      poolMat.dispose();
+      poolTex.dispose();
+      envRT.texture.dispose();
+      pmrem.dispose();
       renderer.dispose();
-      scene.traverse((o) => {
-        if (o instanceof THREE.Mesh) {
-          o.geometry.dispose();
-          const m = o.material;
-          if (Array.isArray(m)) m.forEach((x) => x.dispose());
-          else m.dispose();
-        }
-      });
+      cameraRef.current = null;
       if (renderer.domElement.parentNode === mount) {
         mount.removeChild(renderer.domElement);
       }
     };
-  }, []);
+  }, [fullBody]);
 
   const displayLabel = label ?? activeGloss;
 
@@ -526,18 +476,29 @@ export default function SignAvatar({ plan, currentTime, playing, label }: SignAv
         </div>
       )}
 
-      {/* Active sign readout */}
+      {/* Framing toggle */}
+      <button
+        onClick={() => setView((v) => (v === "signing" ? "full" : "signing"))}
+        title={view === "signing" ? "Show full body" : "Focus on signing space"}
+        className="absolute top-3 right-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container/80 backdrop-blur-sm border border-outline-variant/30 text-[10px] font-mono text-on-surface-variant hover:text-primary transition-colors"
+      >
+        <span className="material-symbols-outlined text-[13px]">
+          {view === "signing" ? "person" : "zoom_in"}
+        </span>
+        {view === "signing" ? "Full body" : "Signing view"}
+      </button>
+
       <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 pointer-events-none">
-        <p className="font-mono text-primary font-bold text-sm truncate max-w-[260px] text-center">
+        <p className="font-mono text-primary font-bold text-sm truncate max-w-[260px] text-center drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
           {displayLabel}
         </p>
         <div className="flex items-center gap-2 text-[10px] font-mono">
           <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary">{fps}fps</span>
-          <span className="px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant">
+          <span className="px-2 py-0.5 rounded-full bg-surface-container/80 backdrop-blur-sm text-on-surface-variant">
             {plan ? `${plan.items.length} signs` : "no plan"}
           </span>
           {plan && (
-            <span className="px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant">
+            <span className="px-2 py-0.5 rounded-full bg-surface-container/80 backdrop-blur-sm text-on-surface-variant">
               {plan.lang}
             </span>
           )}
