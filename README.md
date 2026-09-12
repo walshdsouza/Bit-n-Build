@@ -131,11 +131,32 @@ avatar signs the speech as it is transcribed.
 
 ### Publishing to addons.mozilla.org
 
-Not submitted yet. Before it can be, it needs at minimum: a real add-on id in
-place of `gesturesync-sidebar@REPLACE_ME.example`, an icon set and listing
-copy, and a privacy note covering the API key and the audio sent to the
-transcription provider. AMO also requires reviewable source for the bundled
-`dist/` output.
+The package passes Mozilla's own validator with **0 errors**:
+
+```bash
+cd extension
+npm run lint:ext        # web-ext lint
+npm run package         # → web-ext-artifacts/*.zip   (upload this)
+npm run package:source  # → web-ext-artifacts/*-source.zip
+```
+
+AMO requires the source archive too, because `dist/` is minified. Everything a
+reviewer needs is in [`extension/store/`](extension/store/):
+
+| File | Use |
+|---|---|
+| `LISTING.md` | Paste-ready name, summary, description, tags, reviewer notes |
+| `PRIVACY.md` | Privacy policy — mandatory, since the add-on declares `personalCommunications` |
+| `SOURCE_SUBMISSION.md` | Build instructions for reviewers |
+
+Four `UNSAFE_VAR_ASSIGNMENT` warnings remain. They are `innerHTML` calls inside
+the minified React and three.js builds, not our code, and the source archive
+covers them.
+
+**Before submitting**, a human still has to decide: a support email address,
+the store screenshots, and the category. `LISTING.md` marks each of these
+**[decide]**. Bump `version` in `manifest.json` for every upload — AMO rejects
+a version it has already seen.
 
 ## Testing
 

@@ -5,14 +5,18 @@
   "type": "module",
   "scripts": {
     "build": "node esbuild.config.mjs",
-    "watch": "node esbuild.config.mjs --watch"
+    "watch": "node esbuild.config.mjs --watch",
+    "lint:ext": "web-ext lint --source-dir=. --ignore-files \"node_modules/**\" \"src/**\" \"scripts/**\" \"store/**\" \"vendor/**\" \"web-ext-artifacts/**\" \"*.config.mjs\" \"tsconfig.json\" \"package.json\" \"package-lock.json\" \"AgentFixThis.md\" \"README-BUILD.txt\" \"*~\"",
+    "package": "npm run build && web-ext build --source-dir=. --overwrite-dest --ignore-files \"node_modules/**\" \"src/**\" \"scripts/**\" \"store/**\" \"vendor/**\" \"web-ext-artifacts/**\" \"*.config.mjs\" \"tsconfig.json\" \"package.json\" \"package-lock.json\" \"AgentFixThis.md\" \"README-BUILD.txt\" \"*~\"",
+    "package:source": "node scripts/package-source.mjs"
   },
   "devDependencies": {
     "@types/firefox-webext-browser": "^120.0.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "esbuild": "^0.24.0",
-    "typescript": "^5"
+    "typescript": "^5",
+    "web-ext": "^10.6.0"
   },
   "dependencies": {
     "react": "19.2.8",
