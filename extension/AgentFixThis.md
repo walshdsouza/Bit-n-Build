@@ -1,6 +1,8 @@
 # Agent task list
+-Extension Fixes 
+Fix the audio capture webrtc stream on firefox, the final blob for some reason doesnt get legible audio for it to work properly, ensure it works by inspecting the sizes of the requests that get sent to whisper
+Add a model fallback for groq in case limits are exceeded on open AI 20B 
 
-Add items here and they get picked up on the next pull.
 
 ## Requested
 
