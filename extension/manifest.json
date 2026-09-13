@@ -1,9 +1,9 @@
 {
   "manifest_version": 2,
-  "name": "GestureSync AI — Sign Language Sidebar",
-  "version": "0.1.0",
-  "description": "Live ISL/ASL sign-language avatar for Google Meet, rendered in a persistent Firefox sidebar instead of an in-page overlay.",
-  "author": "GestureSync AI",
+  "name": "UNMUTE — Live Sign Language for Meet",
+  "version": "0.2.0",
+  "description": "Live ASL signs and captions in a draggable Google Meet widget, with an optional Firefox sidebar.",
+  "author": "UNMUTE",
 
   "icons": {
     "16": "icons/icon-16.png",
@@ -44,7 +44,7 @@
   },
 
   "sidebar_action": {
-    "default_title": "GestureSync AI",
+    "default_title": "UNMUTE",
     "default_panel": "dist/sidebar.html",
     "default_icon": {
       "16": "icons/icon-16.png",
@@ -54,7 +54,7 @@
   },
 
   "browser_action": {
-    "default_title": "Open GestureSync AI sidebar",
+    "default_title": "Open UNMUTE sidebar",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png"
@@ -66,6 +66,11 @@
       "matches": ["https://meet.google.com/*"],
       "js": ["dist/meet-bridge.js"],
       "run_at": "document_start"
+    },
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["dist/meet-widget.js"],
+      "run_at": "document_idle"
     }
   ],
 
@@ -85,9 +90,9 @@
         "default": "Ctrl+Shift+G",
         "mac": "Command+Shift+G"
       },
-      "description": "Toggle the GestureSync AI sidebar"
+      "description": "Toggle the UNMUTE sidebar"
     }
   },
 
-  "content_security_policy": "script-src 'self'; object-src 'self'; frame-src http://localhost:3000;"
+  "content_security_policy": "script-src 'self'; object-src 'self'; frame-src 'self';"
 }

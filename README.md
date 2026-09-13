@@ -304,6 +304,7 @@ See [build instructions](extension/README-BUILD.txt), [reviewer/source instructi
 
 ## Documentation and credits
 
+- [Current fix tracker](extension/AgentFixThis.md) — completed changes, remaining issues and verification steps.
 - [Architecture](docs/ARCHITECTURE.md) — notation, language profiles and pipeline design; some internal names predate UNMUTE.
 - [Test report](docs/TEST_REPORT.md) — release validation, real-service checks and current limitations.
 - [NEXA license](public/models/NEXA-LICENSE.txt) — attribution and terms for the included NEXA implementation kit.

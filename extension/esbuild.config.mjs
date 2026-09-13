@@ -16,6 +16,8 @@ const options = {
   entryPoints: {
     background: "src/background/background.ts",
     "meet-bridge": "src/content-scripts/meet-bridge.ts",
+    "meet-widget": "src/content-scripts/meet-widget.ts",
+    widget: "src/widget/index.tsx",
     sidebar: "src/sidebar/index.tsx",
     options: "src/options/index.tsx",
     "page-hook": "src/content-scripts/page-hook.ts",
@@ -37,6 +39,8 @@ const staticFiles = [
   ["src/options/options.html", "dist/options.html"],
   // options.html links this; without it the settings page renders unstyled.
   ["src/options/options.css", "dist/options.css"],
+  ["src/widget/widget.html", "dist/widget.html"],
+  ["src/widget/widget.css", "dist/widget.css"],
   // The avatar model ships inside the extension — it is standalone, so there
   // is no server to fetch it from.
   ["../public/models/nexa.glb", "dist/nexa.glb"],

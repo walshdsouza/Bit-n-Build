@@ -4,6 +4,8 @@ let audioCtx: AudioContext | null = null;
 let destination: MediaStreamAudioDestinationNode | null = null;
 let recorder: MediaRecorder | null = null;
 let capturing = false;
+let startingCapture = false;
+let captureSessionId: string | null = null;
 let captureGeneration = 0;
 const connectedTrackIds = new Set<string>();
 
@@ -66,7 +68,7 @@ function flushQueue(rec: MediaRecorder, queue: Blob[]) {
     type: blob.type,
   });
 
-  window.postMessage({ marker: MARKER, type: "AUDIO_CHUNK", blob }, "*");
+  window.postMessage({ marker: MARKER, type: "AUDIO_CHUNK", blob, captureSessionId }, location.origin);
 }
 
 /**
@@ -133,26 +135,49 @@ function startNewRecorderCycle(generation: number) {
   }, FLUSH_MS);
 }
 
-function startRecording() {
-  if (capturing) return;
-  capturing = true;
-  window.postMessage({ marker: MARKER, type: "CAPTURE_STARTED" }, "*");
-  startNewRecorderCycle(++captureGeneration);
+async function startRecording(sessionId: string | null) {
+  if (capturing || startingCapture) return;
+  captureSessionId = sessionId;
+  startingCapture = true;
+  const generation = ++captureGeneration;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const { audioCtx: context } = ensureAudioGraph();
+    if (context.state !== "running") {
+      await Promise.race([
+        context.resume(),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Audio did not resume.")), 3000); }),
+      ]);
+    }
+    if (generation !== captureGeneration) return;
+    if (context.state !== "running") throw new Error("Meeting audio is suspended.");
+    capturing = true;
+    startNewRecorderCycle(generation);
+    window.postMessage({ marker: MARKER, type: "CAPTURE_STARTED", captureSessionId }, location.origin);
+  } catch {
+    if (generation !== captureGeneration) return;
+    capturing = false;
+    window.postMessage({ marker: MARKER, type: "CAPTURE_ERROR", captureSessionId }, location.origin);
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (generation === captureGeneration) startingCapture = false;
+  }
 }
 
 function stopRecording() {
+  if (startingCapture) { captureGeneration++; startingCapture = false; }
   capturing = false;
   const rec = recorder;
   recorder = null;
   if (rec && rec.state !== "inactive") rec.stop();
-  window.postMessage({ marker: MARKER, type: "CAPTURE_STOPPED" }, "*");
+  window.postMessage({ marker: MARKER, type: "CAPTURE_STOPPED", captureSessionId }, location.origin);
 }
 
 window.addEventListener("message", (event: MessageEvent) => {
   if (event.source !== window) return;
   const data = event.data;
   if (!data || data.marker !== MARKER) return;
-  if (data.type === "START_CAPTURE") startRecording();
+  if (data.type === "START_CAPTURE") void startRecording(typeof data.captureSessionId === "string" ? data.captureSessionId : null);
   if (data.type === "STOP_CAPTURE") stopRecording();
 });
 
