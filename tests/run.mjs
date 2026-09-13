@@ -30,6 +30,8 @@ const SOURCES = [
   "lib/whisper.ts",
   "lib/live-audio.ts",
   "lib/live-api.ts",
+  "lib/project-persistence.ts",
+  "lib/cloud-transcript.ts",
   "components/live/chunk-queue.ts",
   "lib/ffmpeg.ts",
   "lib/youtube-url.ts",
@@ -93,9 +95,11 @@ if (apiOnly) {
   run("whisper.test.js");
   run("live.test.js");
   run("live-api.test.js");
+  run("project-persistence.test.js");
   run("youtube-audio.test.js");
   run("youtube-provider.test.js");
   run("transcript-translation.test.js");
+  run("text-provider.test.js");
   run("youtube-translation-job.test.js");
   run("motion.test.js");
 }

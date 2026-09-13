@@ -1,6 +1,39 @@
 const B = __dirname + "/.build/lib";
 const { generateGloss } = require(B + "/gloss-engine.js");
 const { buildSignPlan, signAt } = require(B + "/sign-plan.js");
+const assert = require("node:assert/strict");
+
+const row = (start, end, gloss, nmm = []) => ({
+  startTime: start, endTime: end, sourceText: gloss, gloss, nmm, status: "queued",
+});
+// Mixed lexical signs and short fingerspelled letters can fit this window;
+// independently clamping scaled letters used to make it overrun anyway.
+const fitted = buildSignPlan([row(0, 1.2, "HELLO ABCD")], { lang: "ASL" });
+assert.ok(fitted.items.every(item => item.endTime - item.startTime >= 0.129));
+assert.equal(fitted.duration, 1.2);
+
+const catchup = buildSignPlan([
+  row(0, 0.2, "ABCDEFGHIJKLMNOPQRST"),
+  row(0.2, 5, "HELLO", [{ time: 0.2, emotion: "negation", intensity: 0.8 }]),
+  row(5, 7, "THANK-YOU"),
+], { lang: "ASL", duration: 7 });
+assert.equal(catchup.items.filter(item => item.sourceIndex === 0).length, 20, "preserve every letter");
+assert.equal(catchup.items.find(item => item.sourceIndex === 1).startTime, 2.6);
+assert.equal(catchup.items.find(item => item.sourceIndex === 2).startTime, 5, "catch up using later headroom");
+assert.equal(catchup.duration, 7, "do not carry avoidable lag into all later rows");
+assert.ok(!catchup.items.filter(item => item.sourceIndex === 0).some(item => item.nmm.some(tag => tag.emotion === "negation")), "delayed expression must not attach to previous row");
+assert.ok(catchup.items.find(item => item.sourceIndex === 1).nmm.some(tag => tag.emotion === "negation" && tag.time === 2.6));
+assert.equal(signAt(catchup, 3).sourceIndex, 1, "seeking resolves actual signed caption");
+
+const overlap = buildSignPlan([row(0, 2, "HELLO"), row(1, 3, "THANK-YOU"), row(3, 4, "HOME")], { lang: "ASL" });
+assert.equal(overlap.duration, 4, "overlapping source captions must not multiply total time");
+assert.ok(overlap.items.every((item, i) => !i || item.startTime >= overlap.items[i - 1].endTime));
+assert.equal(signAt(overlap, -1), null);
+assert.equal(signAt(overlap, 4), null);
+assert.equal(signAt(overlap, NaN), null);
+const gap = buildSignPlan([row(0, 1, "HELLO"), row(3, 4, "HOME")], { lang: "ASL" });
+assert.equal(signAt(gap, 2), null, "source silence remains a gap");
+console.log("PASS duration redistribution, catch-up, source alignment, expressions, overlap and seeking");
 (async () => {
   // Dense speech: far more words than can be signed in the window
   const segs = [

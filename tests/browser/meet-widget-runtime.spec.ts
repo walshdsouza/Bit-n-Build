@@ -1,124 +1,124 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import { encodeMonoWav } from "../../lib/live-audio";
 
-type Message = { type: string; captureSessionId?: string | null; [key: string]: unknown };
-interface Probe {
-  invoke: (message: Message) => Promise<{ owner: string | null; captureSessionId: string | null; error?: string }>;
-  sidebar: Message[];
-  widget: Message[];
-}
-type TestWindow = Window & { browser: unknown; unmuteBridge: Probe };
+type Message = Record<string, unknown>;
+type Sender = { id: string; url: string; tab?: { id: number; url: string }; frameId?: number };
+const host: Sender = { id: "unmute-test", url: "https://meet.google.com/room", tab: { id: 12, url: "https://meet.google.com/room" }, frameId: 0 };
+const extensionUrl = (view: string) => `moz-extension://fixture/${view}`;
 
-async function bridgeFixture(page: Page) {
-  await page.route("https://meet.google.com/**", route => route.fulfill({ contentType: "text/html", body: "<button>Meet fixture</button>" }));
-  await page.route("https://extension.test/**", route => route.fulfill({ contentType: "application/javascript", body: "" }));
-  await page.goto("https://meet.google.com/test-room");
-  await page.evaluate(() => {
-    let receive: (message: Message, sender: { id: string }) => unknown;
-    const probe: Probe = {
-      sidebar: [], widget: [],
-      invoke: message => Promise.resolve(receive(message, { id: "unmute-test" }) as ReturnType<Probe["invoke"]>),
-    };
-    const win = window as unknown as TestWindow;
-    win.unmuteBridge = probe;
-    win.browser = { runtime: {
-      id: "unmute-test",
-      getURL: (path: string) => `https://extension.test/${path}`,
-      onMessage: { addListener: (listener: typeof receive) => { receive = listener; } },
-      sendMessage: (message: Message) => { probe.sidebar.push(message); return Promise.resolve(); },
-    } };
-    window.addEventListener("message", event => {
-      if (event.data?.marker === "unmute-widget-bridge") probe.widget.push(event.data);
-    });
-  });
-  await page.addScriptTag({ path: "extension/dist/meet-bridge.js" });
-}
-const invoke = (page: Page, message: Message) => page.evaluate(message => (window as unknown as TestWindow).unmuteBridge.invoke(message), message);
-const event = (page: Page, type: string, captureSessionId: string | null, audio = false) => page.evaluate(({ type, captureSessionId, audio }) => {
-  window.postMessage({ marker: "gesturesync", type, captureSessionId, ...(audio ? { blob: new Blob(["audio"], { type: "audio/webm" }) } : {}) }, location.origin);
-}, { type, captureSessionId, audio });
-
-test("widget and sidebar share one capture owner and never duplicate audio routing", async ({ page }) => {
-  await bridgeFixture(page);
-  const widget = await invoke(page, { type: "WIDGET_START_CAPTURE" });
-  expect(widget.owner).toBe("widget");
-  const duplicate = await invoke(page, { type: "WIDGET_START_CAPTURE" });
-  expect(duplicate.captureSessionId).toBe(widget.captureSessionId);
-  await expect(invoke(page, { type: "START_CAPTURE" })).rejects.toThrow(/Stop capture in the UNMUTE widget/);
-  await event(page, "AUDIO_CHUNK", widget.captureSessionId, true);
-  await expect.poll(() => page.evaluate(() => (window as unknown as TestWindow).unmuteBridge.widget.filter(message => message.type === "AUDIO_CHUNK").length)).toBe(1);
-  expect(await page.evaluate(() => (window as unknown as TestWindow).unmuteBridge.sidebar.length)).toBe(0);
-  await invoke(page, { type: "WIDGET_STOP_CAPTURE", captureSessionId: widget.captureSessionId });
-  const sidebar = await invoke(page, { type: "START_CAPTURE" });
-  expect(sidebar.owner).toBe("sidebar");
-  await expect(invoke(page, { type: "WIDGET_START_CAPTURE" })).rejects.toThrow(/Stop capture in the sidebar/);
-  await event(page, "AUDIO_CHUNK", sidebar.captureSessionId, true);
-  await expect.poll(() => page.evaluate(() => (window as unknown as TestWindow).unmuteBridge.sidebar.filter(message => message.type === "AUDIO_CHUNK").length)).toBe(1);
-  expect(await page.evaluate(() => (window as unknown as TestWindow).unmuteBridge.widget.filter(message => message.type === "AUDIO_CHUNK").length)).toBe(1);
-  await event(page, "CAPTURE_STOPPED", sidebar.captureSessionId);
-  await expect.poll(async () => (await invoke(page, { type: "WIDGET_CAPTURE_STATUS" })).owner).toBeNull();
-});
-
-test("stale Stop events and stale iframe leases cannot stop a newer widget capture", async ({ page }) => {
-  await bridgeFixture(page);
-  const first = await invoke(page, { type: "WIDGET_START_CAPTURE" });
-  await invoke(page, { type: "WIDGET_STOP_CAPTURE", captureSessionId: first.captureSessionId });
-  const next = await invoke(page, { type: "WIDGET_START_CAPTURE" });
-  expect(next.captureSessionId).not.toBe(first.captureSessionId);
-  await event(page, "CAPTURE_STOPPED", first.captureSessionId);
-  await event(page, "CAPTURE_ERROR", first.captureSessionId);
-  const staleStop = await invoke(page, { type: "WIDGET_STOP_CAPTURE", captureSessionId: first.captureSessionId });
-  expect(staleStop.owner).toBe("widget");
-  expect(staleStop.captureSessionId).toBe(next.captureSessionId);
-  await event(page, "CAPTURE_ERROR", next.captureSessionId);
-  await expect.poll(async () => (await invoke(page, { type: "WIDGET_CAPTURE_STATUS" })).owner).toBeNull();
-  expect((await invoke(page, { type: "WIDGET_CAPTURE_STATUS" })).error).toContain("audio could not start");
-});
-
-test("background restricts capture consent and private handshake tokens to their extension contexts", async () => {
-  type Sender = { id: string; tab: { id: number; url: string }; frameId: number; url: string };
-  let listener: (message: Message, sender: Sender) => Promise<unknown> | undefined = () => undefined;
-  const sent: { tabId: number; message: Message }[] = [];
+function fixture(fetcher: typeof fetch = async () => new Response('{"speech":false}')) {
+  let connected: (port: object) => void = () => {};
+  let receive: (message: Message, sender: Sender) => unknown = () => {};
+  const sent: Message[] = [];
   const storage: Record<string, unknown> = {};
-  const widgetURL = "moz-extension://unmute-test/dist/widget.html";
+  let owner: string | null = null;
+  let session: string | null = null;
   vm.runInNewContext(readFileSync("extension/dist/background.js", "utf8"), {
-    crypto: { randomUUID: () => "private-runtime-test-token" },
+    URL, Blob, FormData, Response, AbortController, atob, setTimeout, clearTimeout, crypto,
+    fetch: fetcher,
     browser: {
       commands: { onCommand: { addListener: () => {} } }, sidebarAction: { toggle: () => {} },
-      runtime: { id: "unmute-test", getURL: (path: string) => `moz-extension://unmute-test/${path}`, onMessage: { addListener: (fn: typeof listener) => { listener = fn; } } },
-      tabs: { onRemoved: { addListener: () => {} }, sendMessage: (tabId: number, message: Message) => { sent.push({ tabId, message }); return Promise.resolve({ owner: "widget", captureSessionId: "lease" }); } },
-      storage: { session: { get: async (key: string) => ({ [key]: storage[key] }), set: async (values: Record<string, unknown>) => { Object.assign(storage, values); }, remove: async () => {} } },
+      runtime: { id: "unmute-test", getURL: extensionUrl,
+        onConnect: { addListener: (listener: typeof connected) => { connected = listener; } },
+        onMessage: { addListener: (listener: typeof receive) => { receive = listener; } } },
+      tabs: { onRemoved: { addListener: () => {} }, query: async () => [host.tab],
+        sendMessage: async (_tabId: number, message: Message) => {
+          sent.push(message);
+          if (message.type === "MEETING_START_CAPTURE") { owner = String(message.owner); session = String(message.captureSessionId); }
+          if (message.type === "MEETING_CANCEL_CAPTURE" && message.captureSessionId === session) owner = null;
+          return { owner, captureSessionId: session };
+        } },
+      storage: { session: { get: async (key: string) => ({ [key]: storage[key] }), set: async (values: object) => Object.assign(storage, values), remove: async () => {} } },
     },
   });
-  const host: Sender = { id: "unmute-test", tab: { id: 12, url: "https://meet.google.com/room" }, frameId: 0, url: "https://meet.google.com/room" };
-  const widget: Sender = { ...host, frameId: 5, url: widgetURL };
-  expect(await listener({ type: "UNMUTE_WIDGET_TOKEN" }, host)).toEqual(await listener({ type: "UNMUTE_WIDGET_TOKEN" }, widget));
-  // Normalize cross-realm VM promises/errors before asserting their messages.
-  const rejected = (message: Message, sender: Sender) => Promise.resolve(listener(message, sender)).then(() => "", reason => String(reason.message));
-  expect(await rejected({ type: "UNMUTE_WIDGET_START" }, host)).toContain("inside UNMUTE");
-  expect(await rejected({ type: "UNMUTE_WIDGET_TOKEN" }, { ...widget, url: "https://meet.google.com/forged", frameId: 9 })).toContain("Unrecognized");
-  expect(await rejected({ type: "UNMUTE_WIDGET_START" }, { ...widget, id: "another-extension" })).toContain("inside a Google Meet tab");
-  await listener({ type: "UNMUTE_WIDGET_START" }, widget);
-  await listener({ type: "UNMUTE_WIDGET_STOP", captureSessionId: "lease" }, widget);
-  expect(sent).toEqual([
-    { tabId: 12, message: { type: "WIDGET_START_CAPTURE", captureSessionId: null } },
-    { tabId: 12, message: { type: "WIDGET_STOP_CAPTURE", captureSessionId: "lease" } },
-  ]);
+  const connect = (view: "widget" | "sidebar", sender: Sender = { ...host, url: extensionUrl(`dist/${view}.html`), frameId: 5 }) => {
+    let listener: (message: Message) => void = () => {};
+    let disconnected: () => void = () => {};
+    const messages: Message[] = [];
+    let closed = false;
+    connected({ name: "unmute-meeting", sender, postMessage: (message: Message) => messages.push(message),
+      disconnect: () => { closed = true; disconnected(); },
+      onMessage: { addListener: (fn: typeof listener) => { listener = fn; } },
+      onDisconnect: { addListener: (fn: typeof disconnected) => { disconnected = fn; } },
+    });
+    return { send: (message: Message) => listener(message), messages, disconnect: () => { closed = true; disconnected(); }, isClosed: () => closed };
+  };
+  return { connect, sent, receive, event: (event: string, captureSessionId: string, extra: Message = {}) => receive({ type: "UNMUTE_CAPTURE_EVENT", event, owner: "widget", captureSessionId, ...extra }, host) };
+}
+const firstSession = "fixture-first-session-0001";
+const secondSession = "fixture-second-session-0002";
+
+test("runtime authorizes only extension views and keeps handshake tokens private", async () => {
+  const probe = fixture();
+  const bad = probe.connect("widget", { ...host, url: "https://meet.google.com/forged" });
+  expect(bad.isClosed()).toBe(true);
+  expect(probe.connect("widget", { ...host, id: "other-extension", url: extensionUrl("dist/widget.html") }).isClosed()).toBe(true);
+  const widget = { ...host, frameId: 5, url: extensionUrl("dist/widget.html") };
+  expect(await probe.receive({ type: "UNMUTE_WIDGET_TOKEN" }, host)).toEqual(await probe.receive({ type: "UNMUTE_WIDGET_TOKEN" }, widget));
+  await expect(Promise.resolve(probe.receive({ type: "UNMUTE_WIDGET_TOKEN" }, { ...host, frameId: 9 }))).rejects.toThrow(/inside a Google Meet/);
+  expect(await probe.receive({ type: "UNMUTE_WIDGET_START" }, widget)).toBeUndefined();
+  expect(probe.sent).toHaveLength(0);
 });
 
-test("a suspended audio graph reports capture failure instead of a false live state", async ({ page }) => {
-  await bridgeFixture(page);
-  await page.evaluate(() => {
-    const win = window as unknown as { AudioContext: unknown };
-    win.AudioContext = class {
-      state = "suspended";
-      createMediaStreamDestination() { return { stream: new MediaStream() }; }
-      resume() { return Promise.reject(new Error("Audio activation blocked")); }
-    };
-  });
-  await page.addScriptTag({ path: "extension/dist/page-hook.js" });
-  await invoke(page, { type: "WIDGET_START_CAPTURE" });
-  await expect.poll(async () => (await invoke(page, { type: "WIDGET_CAPTURE_STATUS" })).error).toContain("audio could not start");
-  expect((await invoke(page, { type: "WIDGET_CAPTURE_STATUS" })).owner).toBeNull();
+test("widget and sidebar cannot record together and closing an owner releases its lease", async () => {
+  const probe = fixture();
+  const widget = probe.connect("widget");
+  widget.send({ type: "START", captureSessionId: firstSession });
+  await expect.poll(() => probe.sent.filter(message => message.type === "MEETING_START_CAPTURE").length).toBe(1);
+  const sidebar = probe.connect("sidebar", { id: host.id, url: extensionUrl("dist/sidebar.html") });
+  sidebar.send({ type: "START", captureSessionId: secondSession });
+  await expect.poll(() => String(sidebar.messages.find(message => message.type === "ERROR")?.message)).toContain("already running in the widget");
+  expect(probe.sent.filter(message => message.type === "MEETING_START_CAPTURE")).toHaveLength(1);
+  widget.disconnect();
+  await expect.poll(() => probe.sent.some(message => message.type === "MEETING_CANCEL_CAPTURE" && message.captureSessionId === firstSession)).toBe(true);
+  const retry = probe.connect("sidebar", { id: host.id, url: extensionUrl("dist/sidebar.html") });
+  retry.send({ type: "START", captureSessionId: "fixture-retry-session-0003" });
+  await expect.poll(() => probe.sent.filter(message => message.type === "MEETING_START_CAPTURE").length).toBe(2);
+  retry.disconnect();
+});
+
+test("hosted requests accept only captured WAVs and final audio drains after Stop", async () => {
+  const requests: { url: string; options?: RequestInit }[] = [];
+  const probe = fixture(async (url, options) => { requests.push({ url: String(url), options }); return new Response('{"speech":false}'); });
+  const widget = probe.connect("widget");
+  widget.send({ type: "START", captureSessionId: firstSession });
+  await expect.poll(() => probe.sent.some(message => message.type === "MEETING_START_CAPTURE")).toBe(true);
+  const audioBase64 = Buffer.from(encodeMonoWav(new Float32Array(16000).fill(.1), 16000)).toString("base64");
+  widget.send({ type: "LIVE_REQUEST", requestId: "uncaptured", audioBase64, captureSessionId: firstSession });
+  await expect.poll(() => widget.messages.find(message => message.requestId === "uncaptured")?.status).toBe(400);
+  await probe.event("AUDIO_CHUNK", firstSession, { audioBase64, duration: 1 });
+  widget.send({ type: "STOP", captureSessionId: firstSession });
+  await probe.event("CAPTURE_STOPPED", firstSession);
+  widget.send({ type: "LIVE_REQUEST", requestId: "final-audio", audioBase64, captureSessionId: firstSession, url: "https://invalid.example/" });
+  await expect.poll(() => widget.messages.find(message => message.requestId === "final-audio")?.status).toBe(200);
+  expect(requests).toHaveLength(1);
+  expect(requests[0].url).toBe("https://unmute-ai.vercel.app/api/live");
+  expect(requests[0].options?.credentials).toBe("omit");
+  const audio = (requests[0].options?.body as FormData).get("audio") as Blob;
+  expect(audio.type).toBe("audio/wav");
+  expect(audio.size).toBe(32044);
+  widget.disconnect();
+});
+
+test("closing a view aborts its hosted request and late or wrong-tab audio is ignored", async () => {
+  let requestSignal: AbortSignal | undefined;
+  const probe = fixture(async (_url, options) => new Promise((_resolve, reject) => {
+    requestSignal = options?.signal as AbortSignal;
+    requestSignal.addEventListener("abort", () => reject(new DOMException("Cancelled", "AbortError")), { once: true });
+  }));
+  const widget = probe.connect("widget");
+  widget.send({ type: "START", captureSessionId: firstSession });
+  await expect.poll(() => probe.sent.some(message => message.type === "MEETING_START_CAPTURE")).toBe(true);
+  const audioBase64 = Buffer.from(encodeMonoWav(new Float32Array(16000).fill(.1), 16000)).toString("base64");
+  await probe.receive({ type: "UNMUTE_CAPTURE_EVENT", event: "AUDIO_CHUNK", owner: "widget", captureSessionId: firstSession, audioBase64 }, { ...host, tab: { id: 22, url: host.url } });
+  expect(widget.messages.filter(message => message.type === "AUDIO_CHUNK")).toHaveLength(0);
+  await probe.event("AUDIO_CHUNK", firstSession, { audioBase64, duration: 1 });
+  widget.send({ type: "LIVE_REQUEST", requestId: "active", audioBase64, captureSessionId: firstSession });
+  await expect.poll(() => Boolean(requestSignal)).toBe(true);
+  widget.disconnect();
+  expect(requestSignal!.aborted).toBe(true);
+  await probe.event("AUDIO_CHUNK", firstSession, { audioBase64, duration: 1 });
+  expect(widget.messages.filter(message => message.type === "AUDIO_CHUNK")).toHaveLength(1);
 });

@@ -1,5 +1,5 @@
 "use client";
-import { use, useState, useEffect, useCallback, useRef } from "react";
+import { use, useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SplitViewport from "@/components/player/SplitViewport";
@@ -7,6 +7,7 @@ import Timeline from "@/components/player/Timeline";
 import GlossInspector from "@/components/player/GlossInspector";
 import { GlossRow, SignLanguageCode, SignPlan, TranscriptSegment } from "@/lib/types";
 import { getLocalProject, saveLocalProject } from "@/lib/local-projects";
+import { loadCloudTranscript } from "@/lib/cloud-transcript";
 
 /** A transcript segment plus the identity it needs to be written back. */
 interface EditableSegment extends TranscriptSegment {
@@ -70,6 +71,8 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
   const [hasMedia, setHasMedia] = useState(false);
   const [planDuration, setPlanDuration] = useState(0);
   const duration = Math.max(mediaDuration, planDuration);
+  const sourceDuration = useMemo(() => mediaDuration || segments.reduce((end, segment) => Math.max(end, segment.end), 0), [mediaDuration, segments]);
+  const signingTail = sourceDuration > 0 ? Math.max(0, Math.ceil(planDuration - sourceDuration)) : 0;
   const timeRef = useRef(0);
   const clockAnchor = useRef({ at: 0, time: 0 });
 
@@ -115,7 +118,7 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
     let cancelled = false;
     let restoredUrl: string | null = null;
 
-    const fromSession = (): { project: ProjectRow; segments: EditableSegment[] } => {
+    const fromSession = (): { project: ProjectRow; segments: EditableSegment[]; warning?: string } => {
       if (id === "demo") return {
         project: { title: "Demo Translation — Everyday Conversation", source_url: null, source_type: null },
         segments: DEMO_SEGMENTS,
@@ -126,10 +129,12 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
 
       let parsed: EditableSegment[] = [];
       let title = "Untitled translation";
+      let warning: string | undefined;
       if (raw) {
         try {
           const data = JSON.parse(raw);
           if ((id === "local" || data.projectId === id) && Array.isArray(data.segments) && data.segments.length) {
+            warning = typeof data.persistenceWarning === "string" ? data.persistenceWarning : undefined;
             title = typeof data.title === "string" ? data.title : typeof data.filename === "string" ? data.filename : "Untitled translation";
             parsed = data.segments.map(
               (s: { start: number; end: number; text: string }, i: number) => ({
@@ -153,6 +158,7 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
           source_type: parsed.length ? type : null,
         },
         segments: parsed,
+        warning,
       };
     };
 
@@ -190,15 +196,24 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
           restoredUrl = saved.mediaBlob ? URL.createObjectURL(saved.mediaBlob) : null;
           setProject({ id: saved.id, title: saved.title, source_url: restoredUrl ?? saved.sourceUrl, source_type: saved.sourceType });
           setSegments(saved.segments);
-          // Saved plans are complete snapshots: reopening does not require an API call.
-          if (saved.plan?.lang === lang && saved.plan.items.length) {
+          // Retiming an older snapshot is local; it never reruns paid translation.
+          let restoredPlan = saved.plan;
+          if (restoredPlan?.lang === lang && restoredPlan.items.length) {
+            if (saved.glossRows.length && restoredPlan.items.some(item => item.sourceIndex === undefined)) {
+              const { buildSignPlan } = await import("@/lib/sign-plan");
+              if (cancelled) return;
+              restoredPlan = buildSignPlan(saved.glossRows, {
+                lang,
+                duration: saved.segments.reduce((end, segment) => Math.max(end, segment.end), 0),
+              });
+            }
             translatedSourceRef.current = sourceKey(saved.segments);
-            setPlan(saved.plan);
-            setPlanDuration(saved.plan.duration);
+            setPlan(restoredPlan);
+            setPlanDuration(restoredPlan.duration);
             setGlossRows(saved.glossRows);
-            sessionStorage.setItem("signPlan", JSON.stringify(saved.plan));
+            sessionStorage.setItem("signPlan", JSON.stringify(restoredPlan));
           }
-          const time = Math.max(0, Math.min(saved.position, saved.duration));
+          const time = Math.max(0, Math.min(saved.position, restoredPlan?.duration ?? saved.duration));
           timeRef.current = time;
           setCurrentTime(time);
           setSeekRequest(previous => ({ time, revision: previous.revision + 1 }));
@@ -221,6 +236,7 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
         if (!cancelled) {
           setProject(s.project);
           setSegments(s.segments);
+          setSaveNote(s.warning ?? null);
           if (!s.segments.length) setError("No transcript is available for this project. Return to the dashboard to create a translation.");
           setLoading(false);
         }
@@ -245,11 +261,7 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
 
         if (!projData) throw new Error("This saved project is unavailable to your account.");
 
-        const { data: segData } = await supabase
-          .from("transcript_segments")
-          .select("*")
-          .eq("project_id", id)
-          .order("sequence_index", { ascending: true });
+        const segData = await loadCloudTranscript(supabase, id);
 
         if (cancelled) return;
 
@@ -257,6 +269,7 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
           // A cloud transcript can save even when its video upload does not.
           // Preserve the freshly uploaded local preview for this same project.
           const handoff = fromSession();
+          setSaveNote(handoff.warning ?? null);
           setProject({
             ...projData as ProjectRow,
             source_url: projData.source_url || handoff.project.source_url,
@@ -270,7 +283,7 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
               id: s.id,
               start: s.start_time,
               end: s.end_time,
-              text: s.edited_text || s.original_text,
+              text: s.edited_text ?? s.original_text,
               original_text: s.original_text,
             })),
           );
@@ -288,6 +301,7 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
         const s = fromSession();
         setProject(s.project);
         setSegments(s.segments);
+        setSaveNote(s.warning ?? null);
         if (!s.segments.length) setError("This project could not be loaded. Return to the dashboard to create a translation.");
       } finally {
         if (!cancelled) setLoading(false);
@@ -340,6 +354,13 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
         // The API omits blank transcript entries. Preserve the original row
         // positions so clearing one line never makes later edits target it.
         let translatedIndex = 0;
+        const sourceIndices = source.flatMap((segment, index) => segment.text.trim() ? [index] : []);
+        if (data.plan?.items) {
+          data.plan.items = data.plan.items.map((item: SignPlan["items"][number]) => ({
+            ...item,
+            sourceIndex: item.sourceIndex === undefined ? undefined : sourceIndices[item.sourceIndex],
+          }));
+        }
         setGlossRows(source.map((segment) => {
           const row = segment.text.trim() ? data.glossRows?.[translatedIndex++] : null;
           return row ?? { startTime: segment.start, endTime: segment.end, sourceText: segment.text, gloss: "", nmm: [], status: "queued", lang: target };
@@ -508,6 +529,7 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
             {saveNote && <span role="status" className="text-primary"> · {saveNote}</span>}
             {error && <span className="text-error"> · {error}</span>}
           </p>
+          {signingTail > 2 && <p className="mt-1 text-xs text-on-surface-variant">Signing continues for {signingTail >= 60 ? `${Math.floor(signingTail / 60)}m ${signingTail % 60}s` : `${signingTail}s`} after the source ends to finish the translation.</p>}
         </div>
 
         <button

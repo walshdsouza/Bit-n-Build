@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 const watch = process.argv.includes("--watch");
 const reactDir = fileURLToPath(new URL("./node_modules/react", import.meta.url));
 const reactDomDir = fileURLToPath(new URL("./node_modules/react-dom", import.meta.url));
+const threeDir = fileURLToPath(new URL("./node_modules/three", import.meta.url));
+const lucideDir = fileURLToPath(new URL("./node_modules/lucide-react", import.meta.url));
 
 const options = {
   alias: {
@@ -12,6 +14,8 @@ const options = {
     "react-dom": reactDomDir,
     "react/jsx-runtime": `${reactDir}/jsx-runtime`,
     "react-dom/client": `${reactDomDir}/client`,
+    three: threeDir,
+    "lucide-react": lucideDir,
   },
   entryPoints: {
     background: "src/background/background.ts",
@@ -44,6 +48,7 @@ const staticFiles = [
   // The avatar model ships inside the extension — it is standalone, so there
   // is no server to fetch it from.
   ["../public/models/nexa.glb", "dist/nexa.glb"],
+  ["../public/live-audio-worklet.js", "dist/live-audio-worklet.js"],
 ];
 
 function copyStatic() {

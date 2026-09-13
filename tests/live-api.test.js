@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { handleLiveRequest, LIVE_TRANSCRIPTION_TIMEOUT_MS } = require('./.build/lib/live-api.js');
+const { handleLiveRequest, LIVE_TRANSCRIPTION_TIMEOUT_MS, isAllowedLiveOrigin } = require('./.build/lib/live-api.js');
 const { encodeMonoWav } = require('./.build/lib/live-audio.js');
 const { transcribeAudioFile } = require('./.build/lib/whisper.js');
 
@@ -33,6 +33,21 @@ const { transcribeAudioFile } = require('./.build/lib/whisper.js');
     return Response.json(providerTranscript);
   };
   try {
+    const extensionOrigin = 'moz-extension://b2b893cd-8a8a-45e3-963d-8c4fbf51a102';
+    equal(isAllowedLiveOrigin(extensionOrigin, 'https://example.test/api/live'), true);
+    equal(isAllowedLiveOrigin(null, 'https://example.test/api/live'), true);
+    for (const origin of ['null', 'https://meet.google.com', 'https://evil.test', `${extensionOrigin}.evil.test`, `${extensionOrigin}/path`, 'moz-extension://fake', 'moz-extension://user@b2b893cd-8a8a-45e3-963d-8c4fbf51a102', 'chrome-extension://abcdefghijklmnopabcdefghijklmnop']) {
+      equal(isAllowedLiveOrigin(origin, 'https://example.test/api/live'), false);
+      const form = new FormData(); form.append('audio', source(), 'meeting.wav');
+      const forbidden = await handleLiveRequest(new Request('https://example.test/api/live', { method: 'POST', headers: { Origin: origin }, body: form }));
+      equal(forbidden.status, 403);
+    }
+    equal(calls, 0);
+    const form = new FormData(); form.append('audio', source(0), 'meeting.wav');
+    const fromExtension = await handleLiveRequest(new Request('https://example.test/api/live', { method: 'POST', headers: { Origin: extensionOrigin }, body: form }));
+    equal(fromExtension.status, 200);
+    equal(await fromExtension.json(), { speech: false });
+    equal(fromExtension.headers.get('access-control-allow-origin'), null);
     process.env.GROQ_API_KEY = 'test-live-groq-key';
     delete process.env.OPENAI_API_KEY;
     AbortSignal.timeout = (duration) => {

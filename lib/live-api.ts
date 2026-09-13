@@ -7,14 +7,24 @@ import { transcribeAudioFile } from "./whisper";
 
 export const LIVE_TRANSCRIPTION_TIMEOUT_MS = 20_000;
 
+/** Host-permitted background requests are outside page CORS. Firefox assigns
+ * each installation a new extension UUID, so the Gecko add-on ID cannot be an
+ * origin allowlist. Accept only the browser's canonical extension-origin form;
+ * web pages (including opaque/null origins) still cannot spend the site's key.
+ * This is origin isolation for the guest API, not extension authentication. */
+export function isAllowedLiveOrigin(origin: string | null, requestUrl: string): boolean {
+  return !origin || origin === new URL(requestUrl).origin
+    || /^moz-extension:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(origin);
+}
+
 /** Server handler kept independent of Next so provider failure and cancellation
  * can be tested through the complete HTTP contract without recording people. */
 export async function handleLiveRequest(request: Request): Promise<Response> {
   let stage: "validation" | "transcription" | "signing" = "validation";
   try {
     const origin = request.headers.get("origin");
-    if (origin && origin !== new URL(request.url).origin) {
-      throw new RequestError("Start live captions from this website.", 403);
+    if (!isAllowedLiveOrigin(origin, request.url)) {
+      throw new RequestError("Start live captions from UNMUTE or its installed meeting extension.", 403);
     }
     if (!request.headers.get("content-type")?.includes("multipart/form-data")) {
       throw new RequestError("Send a live audio chunk as multipart form data.");

@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
       lang: profile.code,
       groqKey,
       openaiKey,
+      signal: req.signal,
     });
 
     // Mark the first row active so the inspector has something highlighted.

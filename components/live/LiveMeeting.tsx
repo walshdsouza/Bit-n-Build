@@ -11,6 +11,17 @@ interface Caption { id: number; text: string; offset: number }
 interface Playback extends Caption { plan: SignPlan }
 interface PendingChunk extends MeetingChunk { offset: number; id: number }
 
+export interface LiveMeetingProps {
+  /** Extensions adapt capture while retaining the website's queue and playback. */
+  captureAudio?: typeof captureMeetingAudio;
+  endpoint?: string;
+  requestAudio?: (form: FormData, signal: AbortSignal) => Promise<Response>;
+  compact?: boolean;
+  visible?: boolean;
+  modelUrl?: string;
+  onCaptureChange?: (capturing: boolean) => void;
+}
+
 function clock(seconds: number) {
   return `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${Math.floor(seconds % 60).toString().padStart(2, "0")}`;
 }
@@ -21,7 +32,7 @@ function friendlyError(error: unknown) {
   return error instanceof Error ? error.message : "Could not connect the selected audio source. Try desktop Chrome or Edge.";
 }
 
-export default function LiveMeeting() {
+export default function LiveMeeting({ captureAudio = captureMeetingAudio, endpoint = "/api/live", requestAudio, compact = false, visible: externallyVisible = true, modelUrl, onCaptureChange }: LiveMeetingProps = {}) {
   const [starting, setStarting] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [finishing, setFinishing] = useState(false);
@@ -41,7 +52,8 @@ export default function LiveMeeting() {
   const [avatarReady, setAvatarReady] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
   const [avatarAttempt, setAvatarAttempt] = useState(0);
-  const [visible, setVisible] = useState(true);
+  const [pageVisible, setPageVisible] = useState(true);
+  const visible = pageVisible && externallyVisible;
   const captureRef = useRef<MeetingCapture | null>(null);
   const captureControllerRef = useRef<AbortController | null>(null);
   const queueRef = useRef<LiveChunkQueue<PendingChunk> | null>(null);
@@ -50,6 +62,8 @@ export default function LiveMeeting() {
   const playbackClockRef = useRef({ id: -1, elapsed: 0 });
   const endRef = useRef<HTMLDivElement>(null);
   const active = playback[0];
+
+  useEffect(() => { onCaptureChange?.(capturing); }, [capturing, onCaptureChange]);
 
   const stop = useCallback(async () => {
     const capture = captureRef.current;
@@ -77,7 +91,7 @@ export default function LiveMeeting() {
   }, []);
 
   useEffect(() => {
-    const update = () => setVisible(document.visibilityState !== "hidden");
+    const update = () => setPageVisible(document.visibilityState !== "hidden");
     update();
     document.addEventListener("visibilitychange", update);
     return () => document.removeEventListener("visibilitychange", update);
@@ -158,9 +172,9 @@ export default function LiveMeeting() {
       let response: Response;
       let result;
       try {
-        response = await fetch("/api/live", {
-          method: "POST", body: form,
-          signal: AbortSignal.any([signal, timeout.signal]),
+        const requestSignal = AbortSignal.any([signal, timeout.signal]);
+        response = requestAudio ? await requestAudio(form, requestSignal) : await fetch(endpoint, {
+          method: "POST", body: form, signal: requestSignal,
         });
         result = await response.json();
       } catch (failure) {
@@ -196,7 +210,7 @@ export default function LiveMeeting() {
     }, fail);
     queueRef.current = queue;
     try {
-      const capture = await captureMeetingAudio((chunk) => {
+      const capture = await captureAudio((chunk) => {
         if (generation !== generationRef.current || !accepting) return;
         const next = { ...chunk, offset, id: id++ };
         offset += chunk.duration;
@@ -228,6 +242,60 @@ export default function LiveMeeting() {
   const meterLevel = audioStatus?.level ? Math.round(Math.max(0, Math.min(1, (20 * Math.log10(audioStatus.level) + 80) / 80)) * 100) : 0;
   const status = capturing ? (pending ? (requestSeconds >= 8 ? "Transcription is taking longer than usual…" : "Turning speech into captions…") : silent ? "No audio detected" : noSpeech ? "Audio received; waiting for clear speech" : "Listening for speech")
     : finishing || pending ? "Finishing captured audio" : active ? "Finishing ASL playback" : started ? "Sharing stopped" : "Ready to connect";
+
+  function cancel() {
+    generationRef.current++;
+    captureControllerRef.current?.abort();
+    queueRef.current?.close();
+    void captureRef.current?.stop();
+    captureRef.current = null;
+    setCapturing(false);
+    setStarting(false);
+    setFinishing(false);
+    setPending(0);
+    setPlayback([]);
+    playbackCountRef.current = 0;
+    setRequestStarted(null);
+    setError(null);
+  }
+
+  if (compact) return (
+    <div className="live-mini">
+      <div className="live-mini-controls">
+        <select aria-label="Audio source" disabled={capturing || busy} value={input === "microphone" ? "microphone" : includeMicrophone ? "both" : "tab"}
+          onChange={event => { setInput(event.target.value === "microphone" ? "microphone" : "tab"); setIncludeMicrophone(event.target.value === "both"); }}>
+          <option value="tab">Meeting audio</option><option value="microphone">My microphone</option><option value="both">Meeting + microphone</option>
+        </select>
+        {capturing ? <button onClick={() => void stop()} aria-label="Stop sharing">Stop</button>
+          : <button onClick={() => void start()} disabled={busy} aria-label="Start live captions">{starting ? "Starting…" : busy ? "Finishing…" : "Start"}</button>}
+        {!capturing && (busy || active) && <button onClick={cancel} aria-label="Cancel pending captions and signing">Cancel</button>}
+      </div>
+      <div className="live-mini-input">
+        <p role="status" data-testid="live-status">{error ? "Needs attention" : captureIssue ? "Audio capture needs attention" : status}</p>
+        <div aria-label="Input audio level" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={meterLevel} className="live-mini-meter"><div style={{ width: `${capturing ? meterLevel : 0}%` }} /></div>
+      </div>
+      {(error || silent || captureIssue) && <div className="live-mini-feedback" role={error ? "alert" : "status"}>
+        {error ?? (captureIssue ? "Audio is paused. Stop and start again to reconnect." : input === "microphone" ? "Check that your microphone is unmuted and speak near it." : includeMicrophone ? "Check your microphone and meeting sound." : "Waiting for participant audio. Choose My microphone for your own voice.")}
+        {error && !capturing && !busy && <button onClick={() => void start()}>Start again</button>}
+      </div>}
+      <div className="avatar-zone">
+        <NexaAvatar key={avatarAttempt} modelUrl={modelUrl} plan={active?.plan ?? null} currentTime={active && playhead.id === active.id ? playhead.time : 0}
+          playing={Boolean(active) && avatarReady && visible} label={active ? undefined : "Ready for conversation"} onReady={setAvatarReady} onError={avatarError} />
+      </div>
+      <div className="live-mini-current">
+        <span>Now signing</span>
+        <p data-testid="live-current-caption">{active?.text || (capturing ? "Listening for your first words…" : "Choose a source and press Start.")}</p>
+      </div>
+      <details className="live-mini-history">
+        <summary>Captions ({captions.length})</summary>
+        <div role="log" aria-label="Meeting captions" aria-live="polite" aria-relevant="additions">
+          {captions.length ? captions.map(caption => <p key={caption.id}><time>{clock(caption.offset)}</time> {caption.text}</p>) : <p>No captions yet.</p>}
+          <div ref={endRef} />
+        </div>
+      </details>
+      {source && <p className="live-mini-source" title={source}>{source}</p>}
+    </div>
+  );
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6 p-4 sm:p-6 lg:p-8">
@@ -287,7 +355,7 @@ export default function LiveMeeting() {
             <span className="flex items-center gap-2 text-xs text-on-surface-variant"><Radio aria-hidden="true" size={15} className={capturing ? "text-primary" : "text-outline"} /> {capturing ? "Sharing audio" : "Not sharing"}</span>
           </div>
           <div className="h-[380px] sm:h-[470px]">
-            <NexaAvatar key={avatarAttempt} plan={active?.plan ?? null} currentTime={active && playhead.id === active.id ? playhead.time : 0} playing={Boolean(active) && avatarReady && visible} label={active ? undefined : "Ready for conversation"} onReady={setAvatarReady} onError={avatarError} />
+            <NexaAvatar key={avatarAttempt} modelUrl={modelUrl} plan={active?.plan ?? null} currentTime={active && playhead.id === active.id ? playhead.time : 0} playing={Boolean(active) && avatarReady && visible} label={active ? undefined : "Ready for conversation"} onReady={setAvatarReady} onError={avatarError} />
           </div>
           <div className="min-h-24 border-t border-outline-variant bg-surface-container px-5 py-4">
             <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-primary">Now signing</p>

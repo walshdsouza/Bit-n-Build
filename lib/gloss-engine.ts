@@ -16,6 +16,7 @@
 import { GlossRow, NMMTag, SignLanguageCode, TranscriptSegment } from "./types";
 import { buildGlossSystemPrompt, getProfile, SignLanguageProfile } from "./sign-languages";
 import { translateTranscriptToEnglish } from "./transcript-translation";
+import { createTextProvider } from "./text-provider";
 
 /* ---------------------------------------------------------------- *
  * Lexical resources for the rule-based path
@@ -268,6 +269,7 @@ export function deriveNMM(
 interface LlmKeys {
   groqKey?: string | null;
   openaiKey?: string | null;
+  signal?: AbortSignal;
 }
 
 function normalizeLlmGloss(gloss: string, source: string, profile: SignLanguageProfile): string[] | null {
@@ -296,23 +298,13 @@ async function glossWithLlm(
   const apiKey = useGroq ? keys.groqKey : keys.openaiKey;
   if (!apiKey?.trim()) return null;
 
-  const endpoint = useGroq
-    ? "https://api.groq.com/openai/v1/chat/completions"
-    : "https://api.openai.com/v1/chat/completions";
-  const model = useGroq ? "openai/gpt-oss-120b" : "gpt-4o";
+  const signal = AbortSignal.any([AbortSignal.timeout(15_000), ...(keys.signal ? [keys.signal] : [])]);
+  const requestText = createTextProvider({ ...keys, signal });
 
   const numbered = segments.map((s, i) => `${i + 1}. ${s.text}`).join("\n");
 
   try {
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey.trim()}`,
-        "Content-Type": "application/json",
-      },
-      signal: AbortSignal.timeout(15_000),
-      body: JSON.stringify({
-        model,
+    const res = await requestText({
         temperature: 0.2,
         response_format: { type: "json_object" },
         messages: [
@@ -325,7 +317,6 @@ async function glossWithLlm(
               `with exactly ${segments.length} entries, same order.\n\n${numbered}`,
           },
         ],
-      }),
     });
 
     if (!res.ok) {
@@ -334,6 +325,7 @@ async function glossWithLlm(
     }
 
     const data = await res.json();
+    signal.throwIfAborted();
     const content = data.choices?.[0]?.message?.content;
     if (!content) return null;
 
@@ -346,6 +338,7 @@ async function glossWithLlm(
     if (normalized.some((lemmas: string[] | null) => !lemmas)) return null;
     return normalized.map((lemmas: string[]) => lemmas.join(" "));
   } catch (err) {
+    if (keys.signal?.aborted) throw keys.signal.reason;
     console.warn("[gloss] LLM path failed, falling back to rules:", err);
     return null;
   }
@@ -359,6 +352,7 @@ export interface GlossOptions {
   lang: SignLanguageCode;
   groqKey?: string | null;
   openaiKey?: string | null;
+  signal?: AbortSignal;
   /** Skip the network call entirely. */
   rulesOnly?: boolean;
 }
@@ -374,6 +368,7 @@ export async function generateGloss(
   const englishSegments = await translateTranscriptToEnglish(segments, {
     groqKey: opts.rulesOnly ? undefined : opts.groqKey,
     openaiKey: opts.rulesOnly ? undefined : opts.openaiKey,
+    signal: opts.signal,
   });
 
   let llmGloss: string[] | null = null;
@@ -381,6 +376,7 @@ export async function generateGloss(
     llmGloss = await glossWithLlm(englishSegments, profile, {
       groqKey: opts.groqKey,
       openaiKey: opts.openaiKey,
+      signal: opts.signal,
     });
   }
 

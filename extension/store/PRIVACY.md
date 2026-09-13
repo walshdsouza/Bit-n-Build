@@ -1,80 +1,29 @@
-# Privacy Policy — GestureSync AI (Firefox extension)
+# Privacy information — UNMUTE Firefox extension
 
-_Last updated: 13 September 2026_
+Updated 13 September 2026.
 
-GestureSync AI turns spoken audio in a Google Meet call into a sign-language
-avatar. This policy describes exactly what the extension handles and where it
-goes.
+## Selected audio
 
-## The short version
+UNMUTE starts capture only after you press **Start**. Choose incoming Google Meet participant audio, your microphone, or both. A microphone source requires browser permission. Video is not recorded.
 
-The extension has no backend. We do not run a server, we receive nothing, and
-there is no analytics or telemetry of any kind. The only data that leaves your
-machine is the call audio you explicitly capture, and it goes directly to the
-transcription provider **you** configured with **your own** API key.
+Complete audio windows are sent through the extension's authenticated background connection to `https://unmute-ai.vercel.app/api/live`. That deployment sends the audio to its configured speech transcription provider, Groq or OpenAI. The response contains English captions and an ASL signing plan. No personal API key is requested by the extension, and deployment credentials are never bundled or shared with the meeting page.
 
-## What is processed
+**Stop** releases input and finishes sending audio already captured. **Cancel** discards pending work. Closing a capturing view cancels its session. Minimize and Hide keep capture running while pausing the visible signing playback; reopen the widget to stop it.
 
-**Call audio.** When you press *Start capture*, the extension records audio from
-the active Google Meet tab and sends it, in short chunks, to a speech-to-text
-provider so it can be transcribed. Nothing is captured until you press that
-button, and it stops when you press *Stop capture* or close the sidebar.
+## Session data
 
-Because that audio is a recording of a conversation, the extension declares the
-`personalCommunications` data-collection permission in its manifest, and Firefox
-shows you this at install time.
+Audio buffers, captions, and queued signing plans are held in memory for the current view. The extension does not write meeting recordings or transcripts to disk. Its session storage holds a private per-tab messaging token. Old keys or language preferences from previous extension versions are unused.
 
-**The resulting transcript.** Held in memory in the sidebar so the avatar can
-sign it. It is not written to disk and is discarded when you close the sidebar.
+The extension adds no analytics or telemetry. Audio received by UNMUTE and its transcription provider is subject to the deployment and provider's operational processing and retention. This document does not claim that server or provider logs are absent.
 
-## Where audio is sent
+## Permissions
 
-To exactly one of these, whichever you configure in Settings:
+- `activeTab` and `tabs` locate the relevant Google Meet tab.
+- `storage` maintains private extension session messaging tokens.
+- Google Meet host permission enables the audio bridge and floating widget.
+- UNMUTE host permission enables the fixed live transcription endpoint.
+- `personalCommunications` declares that user-selected conversation audio is sent for processing.
 
-| Provider | Endpoint | Their policy |
-|---|---|---|
-| Groq | `api.groq.com` | <https://groq.com/privacy-policy/> |
-| OpenAI | `api.openai.com` | <https://openai.com/policies/privacy-policy> |
+The avatar model and renderer are bundled locally. No remote executable code is loaded.
 
-Your audio is subject to that provider's privacy policy and retention rules once
-it reaches them. We have no control over, and no visibility into, what they do
-with it. If you set no key, no audio is sent anywhere and transcription simply
-does not run.
-
-## What is stored on your device
-
-Stored with `browser.storage.local`, on your computer only:
-
-- your Groq and/or OpenAI API key
-- your chosen target sign language (ASL or ISL)
-
-Your API key is sent only to the provider it belongs to, as the authorisation
-header of the transcription request. It is never transmitted anywhere else.
-Removing the extension deletes this storage.
-
-## What is never collected
-
-- No browsing history, page content, form data, cookies or credentials
-- No identifiers, device fingerprints, analytics or crash reports
-- No account — the extension has no sign-in
-- Nothing is sent to the extension's authors
-
-## Permissions, and why each is needed
-
-| Permission | Why |
-|---|---|
-| `activeTab`, `tabs` | Find the Google Meet tab to capture audio from |
-| `storage` | Save your API key and language choice on your device |
-| `https://meet.google.com/*` | Run the content script that captures tab audio |
-| `https://api.groq.com/*`, `https://api.openai.com/*` | Send audio for transcription |
-
-## The avatar
-
-Sign generation runs entirely on your machine. Glossing, notation and motion
-planning are local computations, and the 3D model ships inside the extension.
-No part of rendering the avatar involves a network request.
-
-## Contact
-
-Report problems via the GitHub repository:
-<https://github.com/walshdsouza/Bit-n-Build>
+Report a problem through the [project repository](https://github.com/walshdsouza/Bit-n-Build).

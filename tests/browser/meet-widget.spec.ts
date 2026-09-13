@@ -42,7 +42,7 @@ async function openWidget(page: Page) {
   });
   await page.goto("https://meet.google.com/fixture-room");
   await page.addScriptTag({ path: path.join(process.cwd(), "extension", "dist", "meet-widget.js") });
-  await expect(widget(page).getByRole("button", { name: "Start", exact: true })).toBeVisible();
+  await expect(widget(page).getByRole("button", { name: "Start live captions", exact: true })).toBeVisible();
   return { providerRequests: () => providerRequests };
 }
 
@@ -69,7 +69,7 @@ test("floating widget renders the real NEXA iframe and leaves meeting controls u
   expect(canvas!.height).toBeGreaterThan(80);
   await page.getByRole("button", { name: "Meeting toolbar", exact: true }).click();
   await expect(page.locator("#meeting-control")).toHaveAttribute("data-clicks", "1");
-  await expect(widget(page).getByText("Meeting captions will appear here.")).toBeVisible();
+  await expect(widget(page).getByText("Choose a source and press Start.")).toBeVisible();
   expect(fixture.providerRequests()).toBe(0);
   await page.screenshot({ path: "logs/meet-widget-desktop.png" });
   await host(page).screenshot({ path: "logs/meet-widget-closeup.png" });
@@ -108,7 +108,7 @@ test("dragging, resizing and keyboard controls keep the widget inside the viewpo
   expect((await expectInBounds(page)).width).toBe(374);
   await page.setViewportSize({ width: 320, height: 568 });
   await expectInBounds(page);
-  await expect(widget(page).getByRole("button", { name: "Start", exact: true })).toBeInViewport();
+  await expect(widget(page).getByRole("button", { name: "Start live captions", exact: true })).toBeInViewport();
   await page.screenshot({ path: "logs/meet-widget-small.png" });
 });
 
@@ -120,7 +120,7 @@ test("minimize, expand, hide and reopen preserve widget geometry", async ({ page
   expect((await host(page).boundingBox())!.height).toBe(36);
   await expect(resizeControl(page)).toBeHidden();
   await widget(page).getByRole("button", { name: "Expand widget", exact: true }).click();
-  await expect(widget(page).getByRole("button", { name: "Start", exact: true })).toBeVisible();
+  await expect(widget(page).getByRole("button", { name: "Start live captions", exact: true })).toBeVisible();
   expect((await expectInBounds(page)).height).toBe(original.height);
   await widget(page).getByRole("button", { name: "Hide widget", exact: true }).click();
   await expect(page.locator('iframe[title="UNMUTE live sign language"]')).toBeHidden();
@@ -129,7 +129,7 @@ test("minimize, expand, hide and reopen preserve widget geometry", async ({ page
   await reopen.focus();
   await page.keyboard.press("Enter");
   await expect(reopen).toBeHidden();
-  await expect(widget(page).getByRole("button", { name: "Start", exact: true })).toBeVisible();
+  await expect(widget(page).getByRole("button", { name: "Start live captions", exact: true })).toBeVisible();
   expect(await expectInBounds(page)).toEqual(original);
 });
 
@@ -144,7 +144,7 @@ test("Meet replacing its body reattaches one widget without duplicate injection"
     document.body.replaceWith(nextBody);
   });
   await expect(host(page)).toHaveCount(1);
-  await expect(widget(page).getByRole("button", { name: "Start", exact: true })).toBeVisible();
+  await expect(widget(page).getByRole("button", { name: "Start live captions", exact: true })).toBeVisible();
   expect(await expectInBounds(page)).toEqual(original);
   await page.addScriptTag({ path: path.join(process.cwd(), "extension", "dist", "meet-widget.js") });
   await expect(host(page)).toHaveCount(1);
@@ -163,8 +163,8 @@ test("page-forged capture commands and tokenless iframe audio never start transc
     frame.contentWindow!.postMessage({ channel: "unmute-widget", type: "AUDIO_CHUNK", blob: new Blob(["forged audio"], { type: "audio/webm" }) }, "https://extension.test");
   });
   await page.waitForTimeout(500);
-  await expect(widget(page).getByRole("button", { name: "Start", exact: true })).toBeVisible();
-  await expect(widget(page).getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
+  await expect(widget(page).getByRole("button", { name: "Start live captions", exact: true })).toBeVisible();
+  await expect(widget(page).getByRole("button", { name: "Stop sharing", exact: true })).toHaveCount(0);
   expect(fixture.providerRequests()).toBe(0);
   const messages = await page.evaluate(() => (window as unknown as { runtimeMessages: Array<{ type: string }> }).runtimeMessages);
   expect(messages.some(message => message.type === "UNMUTE_WIDGET_START")).toBe(false);

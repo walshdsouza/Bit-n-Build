@@ -11,7 +11,6 @@
 
 import {
   GlossRow,
-  NMMTag,
   ProsodyFrame,
   SignEntry,
   SignLanguageCode,
@@ -27,7 +26,7 @@ import { emotionToNMM } from "./prosody";
 export interface PlanOptions {
   lang: SignLanguageCode;
   prosody?: ProsodyFrame[];
-  /** Total media duration; the plan is clamped to it. */
+  /** Total media duration; readable signing may extend beyond it. */
   duration?: number;
 }
 
@@ -48,14 +47,6 @@ function prosodyAt(frames: ProsodyFrame[] | undefined, t: number): ProsodyFrame 
  */
 const MIN_SIGN_DURATION = 0.13;
 
-/**
- * Expands one gloss row into timed sign items.
- *
- * Signs are laid out sequentially inside the row's [startTime, endTime]
- * window, then uniformly scaled so the last sign lands on the row's end —
- * keeping the avatar synchronised with the source speaker even when the
- * nominal articulation times don't add up to the spoken duration.
- */
 /** A resolved sign with a relative duration, not yet placed on the timeline. */
 interface PendingSign {
   gloss: string;
@@ -108,49 +99,70 @@ function expandRow(
 
   if (!units.length) return [];
 
-  // 2. Fit the sequence into the row's time window. Durations are returned
-  //    relative; buildSignPlan places them on the global timeline so that a row
-  //    which cannot compress far enough pushes later rows later rather than
-  //    overlapping them.
-  const window = Math.max(row.endTime - row.startTime, 0.4);
-  const total = units.reduce((s, u) => s + u.dur, 0);
-  const scale = total > 0 ? window / total : 1;
-
   return units.map((u) => ({
     gloss: u.gloss,
-    duration: Math.max(u.dur * scale, MIN_SIGN_DURATION),
+    duration: u.dur,
     entry: u.entry,
     fingerspell: u.fingerspell,
     emphasis,
   }));
 }
 
-/** Attaches NMMs to whichever sign is active at each marker's timestamp. */
+/** Fit weighted durations while reserving the readability floor first.
+ * Clamping each independently after scaling can exceed an otherwise feasible
+ * window. Redistributing the remaining budget avoids that artificial drift.
+ */
+function fitDurations(pending: PendingSign[], available: number): number[] {
+  let budget = Math.max(available, pending.length * MIN_SIGN_DURATION);
+  const durations = pending.map(() => 0);
+  let remaining = pending.map((_, index) => index);
+  while (remaining.length) {
+    const weight = remaining.reduce((sum, index) => sum + pending[index].duration, 0);
+    const short = remaining.filter((index) => pending[index].duration * budget / weight < MIN_SIGN_DURATION);
+    if (!short.length) {
+      for (const index of remaining) durations[index] = pending[index].duration * budget / weight;
+      break;
+    }
+    const fixed = new Set(short);
+    for (const index of short) durations[index] = MIN_SIGN_DURATION;
+    budget -= short.length * MIN_SIGN_DURATION;
+    remaining = remaining.filter((index) => !fixed.has(index));
+  }
+  return durations;
+}
+
+/** Map this row's expression markers onto its actual signing window. */
 function attachNmm(
   items: SignPlanItem[],
-  rows: GlossRow[],
+  row: GlossRow,
   nmmSet: string[],
   prosody?: ProsodyFrame[],
 ) {
-  const all: NMMTag[] = rows.flatMap((r) => r.nmm ?? []);
+  if (!items.length) return;
+  const start = items[0].startTime;
+  const end = items[items.length - 1].endTime;
+  const signingTime = (time: number) => start + Math.max(0, Math.min(1,
+    (time - row.startTime) / Math.max(row.endTime - row.startTime, 0.001))) * (end - start);
 
-  for (const tag of all) {
+  for (const tag of row.nmm ?? []) {
+    const time = signingTime(tag.time);
     const target =
-      items.find((it) => tag.time >= it.startTime && tag.time < it.endTime) ??
-      items.find((it) => it.startTime >= tag.time);
+      items.find((it) => time >= it.startTime && time < it.endTime) ?? items[items.length - 1];
     if (target && !target.nmm.some((n) => n.emotion === tag.emotion)) {
-      target.nmm.push(tag);
+      target.nmm.push({ ...tag, time });
     }
   }
 
   // Prosody-derived affect fills in anywhere the glosser left the face neutral.
   if (prosody?.length) {
     for (const frame of prosody) {
+      if (frame.time < row.startTime || frame.time >= row.endTime) continue;
       if (frame.emotion === "neutral" || frame.confidence < 0.5) continue;
-      const target = items.find((it) => frame.time >= it.startTime && frame.time < it.endTime);
+      const time = signingTime(frame.time);
+      const target = items.find((it) => time >= it.startTime && time < it.endTime);
       if (target && !target.nmm.length) {
         target.nmm.push({
-          time: frame.time,
+          time,
           // Only offer the ISL-specific affirmation tilt if this language has it.
           emotion: emotionToNMM(frame.emotion, nmmSet.includes("head_tilt_affirm")),
           intensity: frame.confidence,
@@ -181,26 +193,32 @@ export function buildSignPlan(rows: GlossRow[], opts: PlanOptions): SignPlan {
   const items: SignPlanItem[] = [];
   let cursor = 0;
 
-  for (const row of rows) {
+  for (const [sourceIndex, row] of rows.entries()) {
     const pending = expandRow(row, profile.code, profile.secondsPerSign, opts.prosody);
     if (!pending.length) continue;
 
     cursor = Math.max(cursor, row.startTime);
-    for (const p of pending) {
-      items.push({
+    // A delayed row uses the time left until its source end, rather than its
+    // full original width. Later, less dense rows can therefore catch up.
+    const durations = fitDurations(pending, row.endTime - cursor);
+    const rowItems: SignPlanItem[] = [];
+    for (const [index, p] of pending.entries()) {
+      const duration = durations[index];
+      rowItems.push({
         gloss: p.gloss,
+        sourceIndex,
         startTime: Math.round(cursor * 1000) / 1000,
-        endTime: Math.round((cursor + p.duration) * 1000) / 1000,
+        endTime: Math.round((cursor + duration) * 1000) / 1000,
         entry: p.entry,
         fingerspell: p.fingerspell,
         nmm: [],
         emphasis: p.emphasis,
       });
-      cursor += p.duration;
+      cursor += duration;
     }
+    attachNmm(rowItems, row, profile.nmmSet, opts.prosody);
+    items.push(...rowItems);
   }
-
-  attachNmm(items, rows, profile.nmmSet, opts.prosody);
 
   const lastEnd = items.length ? items[items.length - 1].endTime : 0;
   // Never report a duration shorter than the signing actually takes, or the
@@ -217,8 +235,14 @@ export function buildSignPlan(rows: GlossRow[], opts: PlanOptions): SignPlan {
 
 /** The sign active at time `t` — used by the avatar renderer each frame. */
 export function signAt(plan: SignPlan, t: number): SignPlanItem | null {
-  for (const it of plan.items) {
-    if (t >= it.startTime && t < it.endTime) return it;
+  let low = 0;
+  let high = plan.items.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >>> 1;
+    const item = plan.items[mid];
+    if (t < item.startTime) high = mid - 1;
+    else if (t >= item.endTime) low = mid + 1;
+    else return Number.isFinite(t) ? item : null;
   }
   return null;
 }

@@ -129,8 +129,6 @@ if (!document.getElementById(ROOT_ID)) {
       // Page events are notifications only. Ownership comes from the isolated
       // extension bridge so Meet scripts cannot authorize paid transcription.
       void syncOwner().catch(() => {});
-    } else if (data.type === "AUDIO_CHUNK" && owner === "widget" && data.blob instanceof Blob && data.blob.size > 0 && data.blob.size <= 4 * 1024 * 1024) {
-      send({ type: "AUDIO_CHUNK", blob: data.blob });
     }
   });
   const attach = () => { if (!wrapper.isConnected && document.body) { document.body.prepend(wrapper); layout(); } };

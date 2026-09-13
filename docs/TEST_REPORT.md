@@ -1,3 +1,9 @@
+# Current release — 13 September 2026
+
+Live/widget parity, Firefox PCM capture, provider fallback, readable timing and cloud storage fixes are implemented. The authoritative current evidence and remaining human/release checks are in [the fix tracker](../extension/AgentFixThis.md). Production deployment: https://unmute-ai.vercel.app (8wwErSB7pvr9V1WQ82yh5w7xz9Ej). Actual Firefox: 3 passed; affected website browser suite: 46 passed with one isolated retry; MP4 and old-snapshot timing recovery checks also passed. The media bucket and owner policies are provisioned, and a signed-in production MP4 was saved to Supabase and played successfully.
+
+## Prior release report (historical)
+
 # UNMUTE release test report
 
 Tested on 13 September 2026 (Asia/Kolkata).

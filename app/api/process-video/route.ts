@@ -15,6 +15,7 @@ import type { TranscriptSegment } from "@/lib/types";
 import { fetchNativeYouTubeCaptions } from "@/lib/youtube-captions";
 import { readProviderYouTube } from "@/lib/youtube-provider";
 import { isTranslationJob, translateYouTubeTranscript } from "@/lib/youtube-translation-job";
+import { persistProjectTranscript, type PersistTranscriptInput } from "@/lib/project-persistence";
 
 export const runtime = "nodejs";
 export const maxDuration = 180;
@@ -24,16 +25,9 @@ interface MediaResult {
   text: string;
   segments: TranscriptSegment[];
 }
-interface PersistInput extends MediaResult {
-  title: string;
-  sourceType: "youtube" | "upload";
-  sourceUrl?: string | null;
-  file?: File;
-  buffer?: Buffer;
-}
 
 /** Saving is optional: a missing account or database must not discard speech. */
-async function persistTranscript(input: PersistInput) {
+async function persistTranscript(input: PersistTranscriptInput) {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     return { projectId: null, sourceUrl: input.sourceUrl ?? null };
   }
@@ -41,35 +35,7 @@ async function persistTranscript(input: PersistInput) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { projectId: null, sourceUrl: input.sourceUrl ?? null };
-    let sourceUrl = input.sourceUrl ?? null;
-    if (input.file && input.buffer) {
-      const extension = input.file.name.split(".").pop()?.replace(/[^a-zA-Z0-9]/g, "") || "mp4";
-      const storagePath = `${user.id}/${randomUUID()}.${extension}`;
-      const { error } = await supabase.storage.from("media").upload(storagePath, input.buffer, {
-        contentType: input.file.type || "application/octet-stream", upsert: false,
-      });
-      if (!error) sourceUrl = supabase.storage.from("media").getPublicUrl(storagePath).data.publicUrl;
-      else console.warn("[process-video] Media could not be saved:", error.message);
-    }
-    const { data: project, error } = await supabase.from("projects").insert({
-      user_id: user.id, title: input.title, source_type: input.sourceType,
-      source_url: sourceUrl, source_duration: input.duration, status: "ready",
-    }).select().single();
-    if (error || !project) {
-      console.warn("[process-video] Project could not be saved:", error?.message);
-      return { projectId: null, sourceUrl, persistenceWarning: "Translation is ready, but could not be saved to your account." };
-    }
-    const { error: segmentError } = await supabase.from("transcript_segments").insert(
-      input.segments.map((segment, index) => ({
-        project_id: project.id, sequence_index: index,
-        start_time: segment.start, end_time: segment.end, original_text: segment.text,
-      })),
-    );
-    if (segmentError) {
-      console.warn("[process-video] Transcript could not be saved:", segmentError.message);
-      return { projectId: null, sourceUrl, persistenceWarning: "Translation is ready, but its transcript could not be saved." };
-    }
-    return { projectId: project.id, sourceUrl };
+    return await persistProjectTranscript(supabase, user.id, input);
   } catch (error) {
     console.warn("[process-video] Optional persistence failed:", error instanceof Error ? error.message : "Unknown database error");
     return { projectId: null, sourceUrl: input.sourceUrl ?? null, persistenceWarning: "Translation is ready, but could not be saved to your account." };

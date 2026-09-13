@@ -30,11 +30,14 @@ const INCLUDE = [
   "extension/package-lock.json",
   "extension/tsconfig.json",
   "extension/README-BUILD.txt",
+  "extension/README.md",
   // Shared pipeline the sidebar imports.
   "lib",
   "components/player/NexaAvatar.tsx",
   "components/player/avatar",
+  "components/live",
   "public/models",
+  "public/live-audio-worklet.js",
 ];
 
 mkdirSync(outDir, { recursive: true });
@@ -44,7 +47,7 @@ const v = JSON.parse(
     encoding: "utf8",
   }),
 );
-const zipPath = path.join(outDir, `gesturesync-source-${v}.zip`);
+const zipPath = path.join(outDir, `unmute-source-${v}.zip`);
 
 const present = INCLUDE.filter((p) => existsSync(path.join(repoDir, p)));
 const missing = INCLUDE.filter((p) => !existsSync(path.join(repoDir, p)));
@@ -52,16 +55,33 @@ if (missing.length) {
   console.warn("Skipping paths that do not exist:", missing.join(", "));
 }
 
-// PowerShell's Compress-Archive is always available on Windows; `zip` is the
-// usual tool elsewhere. Either produces an archive AMO accepts.
+// Preserve repository-relative paths on Windows; Compress-Archive given a
+// list of nested files flattens their parents and breaks shared imports.
 if (process.platform === "win32") {
   const list = present.map((p) => `'${path.join(repoDir, p).replace(/'/g, "''")}'`).join(",");
+  const quotedZip = zipPath.replace(/'/g, "''");
+  const quotedRoot = `${repoDir}${path.sep}`.replace(/'/g, "''");
   execFileSync(
     "powershell",
     [
       "-NoProfile",
       "-Command",
-      `if (Test-Path '${zipPath}') { Remove-Item '${zipPath}' } ; Compress-Archive -Path ${list} -DestinationPath '${zipPath}'`,
+      `Add-Type -AssemblyName System.IO.Compression -ErrorAction Stop
+Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+$archivePath = '${quotedZip}'
+$sourceRoot = '${quotedRoot}'
+if (Test-Path -LiteralPath $archivePath) { Remove-Item -LiteralPath $archivePath }
+$archive = [System.IO.Compression.ZipFile]::Open($archivePath, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+  foreach ($entryPath in @(${list})) {
+    $entry = Get-Item -LiteralPath $entryPath
+    $files = if ($entry.PSIsContainer) { Get-ChildItem -LiteralPath $entryPath -File -Recurse } else { @($entry) }
+    foreach ($sourceFile in $files) {
+      $entryName = $sourceFile.FullName.Substring($sourceRoot.Length).Replace('\\', '/')
+      [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $sourceFile.FullName, $entryName, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
+    }
+  }
+} finally { $archive.Dispose() }`,
     ],
     { stdio: "inherit" },
   );

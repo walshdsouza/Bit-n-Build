@@ -27,5 +27,29 @@ button:disabled { opacity: .5; cursor: default; }
 .widget-controls button { border: 1px solid #536477; border-radius: 6px; padding: 5px 10px; min-height: 30px; background: #1d3046; color: #dbf5ff; font-size: 11px; font-weight: 600; }
 .widget-controls button:first-child { flex: 1; }
 .widget-controls button:hover:not(:disabled) { background: #29435e; }
+.widget-live, .sidebar-live { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; flex: 1; }
+.sidebar-label { margin-left: auto; font-size: 11px; color: #aebccc; }
+.live-mini { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; overflow-y: auto; }
+.live-mini-controls { display: flex; gap: 5px; padding: 7px 8px 3px; flex-shrink: 0; }
+.live-mini-controls select { flex: 1; min-width: 0; width: 0; background: #1b293b; color: #eef2f7; border: 1px solid #536477; border-radius: 5px; font: inherit; font-size: 11px; }
+.live-mini-controls button, .live-mini-feedback button { min-height: 30px; border: 1px solid #536477; border-radius: 5px; background: #1d3046; color: #dbf5ff; padding: 4px 9px; font-size: 11px; font-weight: 600; }
+.live-mini-controls button:hover:not(:disabled), .live-mini-feedback button:hover { background: #29435e; }
+.live-mini-controls select:focus-visible, .live-mini-history summary:focus-visible { outline: 2px solid #4cd7f6; outline-offset: 2px; }
+.live-mini-input { display: flex; align-items: center; gap: 8px; padding: 4px 9px 6px; min-height: 25px; flex-shrink: 0; }
+.live-mini-input p { margin: 0; color: #bdcad8; font-size: 10px; flex: 1; }
+.live-mini-meter { flex: 0 0 36px; height: 5px; background: #354354; border-radius: 4px; overflow: hidden; }
+.live-mini-meter > div { height: 100%; background: #4cd7f6; }
+.live-mini .avatar-zone { min-height: 105px; }
+.live-mini-feedback { flex-shrink: 0; max-height: 90px; overflow: auto; margin: 0 8px 6px; padding: 7px; border: 1px solid #8e685f; border-radius: 5px; color: #ffcebc; font-size: 11px; line-height: 1.4; }
+.live-mini-feedback button { display: block; margin-top: 5px; }
+.live-mini-current { flex-shrink: 0; padding: 6px 10px; border-top: 1px solid #ffffff10; background: #0003; }
+.live-mini-current > span { font-size: 9px; text-transform: uppercase; letter-spacing: .07em; color: #4cd7f6; }
+.live-mini-current p { margin: 3px 0 0; max-height: 43px; overflow: auto; overflow-wrap: anywhere; font-size: 12px; line-height: 1.4; }
+.live-mini-history { flex-shrink: 0; border-top: 1px solid #ffffff0f; font-size: 11px; }
+.live-mini-history summary { min-height: 25px; padding: 5px 10px; color: #c6d5e5; cursor: pointer; }
+.live-mini-history > div { max-height: 100px; overflow-y: auto; padding: 0 10px 5px; }
+.live-mini-history p { margin: 5px 0; line-height: 1.5; overflow-wrap: anywhere; }
+.live-mini-history time { font: 10px ui-monospace, monospace; color: #4cd7f6; }
+.live-mini-source { flex-shrink: 0; margin: 0; padding: 2px 22px 4px 10px; font-size: 9px; color: #adbdce; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @keyframes live-pulse { 50% { opacity: .5; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

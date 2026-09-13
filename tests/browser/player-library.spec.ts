@@ -122,6 +122,47 @@ test("saving edited transcript updates the existing local track", async ({ page 
   await expect(page.getByRole("link", { name: /Library regression recording.*Saved on this device/ })).toHaveCount(1);
 });
 
+test("an older saved timing plan catches up locally without retranslating the source", async ({ page }) => {
+  await openUploadedTrack(page);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page).toHaveURL(/\/player\/saved-[a-f0-9-]{36}$/);
+  const savedId = page.url().split("/").at(-1)!;
+  // Reproduce an already-saved pre-fix plan, retaining the original captions.
+  await page.evaluate(async (id) => {
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open("gesturesync-library", 1);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const db = request.result;
+        const tx = db.transaction("projects", "readwrite");
+        const store = tx.objectStore("projects");
+        const get = store.get(id);
+        get.onsuccess = () => {
+          const saved = get.result;
+          saved.plan.items = saved.plan.items.map((item: Record<string, unknown>) => {
+            const legacy: Record<string, unknown> = { ...item, startTime: Number(item.startTime) * 2, endTime: Number(item.endTime) * 2 };
+            delete legacy.sourceIndex;
+            return legacy;
+          });
+          saved.plan.duration *= 2;
+          saved.duration *= 2;
+          store.put(saved);
+        };
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => { db.close(); reject(tx.error); };
+      };
+    });
+  }, savedId);
+  let calls = 0;
+  await page.route("**/api/translate", route => { calls++; return route.abort(); });
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Play", exact: true })).toBeEnabled();
+  const repaired = await page.evaluate(() => JSON.parse(sessionStorage.getItem("signPlan")!));
+  expect(repaired.duration).toBe(20);
+  expect(repaired.items.every((item: { sourceIndex?: number }) => Number.isInteger(item.sourceIndex))).toBe(true);
+  expect(calls).toBe(0);
+});
+
 test("missing local track gives an actionable error instead of a demo", async ({ page }) => {
   await page.goto("/player/saved-00000000-0000-4000-8000-000000000000");
   await expect(page.getByText(/This track is not saved in this browser/)).toBeVisible();

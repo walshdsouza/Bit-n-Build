@@ -1,112 +1,31 @@
-# AMO listing copy
-
-Paste-ready text for <https://addons.mozilla.org/developers/>. Fields marked
-**[decide]** need a human choice before submission.
-
----
+# UNMUTE Firefox listing draft
 
 ## Name
 
-```
-GestureSync AI — Sign Language Sidebar
-```
+UNMUTE — Live Sign Language for Meet
 
-## Summary (250 char limit)
+## Summary
 
-```
-Turns Google Meet speech into a live 3D sign-language avatar in a Firefox
-sidebar. Supports American (ASL) and Indian (ISL) Sign Language. Runs locally
-with your own transcription API key — no account, no servers.
-```
+Live English captions and an ASL avatar for Google Meet, with a movable widget or Firefox sidebar. Choose participant audio, your microphone, or both. Transcription is provided by UNMUTE; no personal API key is needed.
 
 ## Description
 
-```
-GestureSync AI captions your Google Meet calls with a signing avatar instead of
-text. Speech is transcribed, translated into sign-language gloss, and performed
-by a 3D avatar in a persistent Firefox sidebar — so it sits beside the call
-rather than covering it.
+UNMUTE makes meeting speech visible through English captions and an animated ASL avatar. Its compact Google Meet widget can be moved, resized, minimized, and reopened. The Firefox sidebar provides the same audio-source controls, input meter, caption history, and avatar playback.
 
-WHAT IT DOES
+Press Start after choosing Meeting audio, My microphone, or Meeting + microphone. Speech is processed in five-second windows. Stop releases capture and finishes queued audio and signs. Caption history remains available for the current view's session.
 
-• Transcribes the audio of the active Meet tab
-• Translates it into ASL or ISL gloss, applying each language's own grammar
-• Drives a rigged 3D avatar with articulated hands and facial markers
-• Runs in a sidebar you can keep open for the whole call
+The output is ASL; BSL and ISL are not offered in this version. Machine-generated signs and fingerspelling remain subject to vocabulary and interpretation limitations. Language accuracy requires review by fluent signers.
 
-ABOUT INDIAN SIGN LANGUAGE
+## Setup and data
 
-ISL is not ASL with different vocabulary. It has its own grammar — strict
-subject-object-verb order, negation after the verb, question words at the end
-of the clause — and a two-handed manual alphabet. The extension implements
-these separately rather than relabelling ASL output.
+Read README.md for temporary installation and store/PRIVACY.md for audio processing. Audio is sent to the fixed UNMUTE deployment, which calls its configured transcription provider. The extension does not ask for or bundle provider keys. No remote executable code is loaded.
 
-NO SERVER, NO ACCOUNT
+## Submission checklist
 
-Everything runs on your machine. Sign generation — glossing, notation and
-motion planning — is entirely local. The only network request is the
-transcription call, which goes directly from your browser to Groq or OpenAI
-using an API key you provide. The authors receive no data whatsoever.
+- Use version 0.3.0 from manifest.json.
+- Attach the source archive and store/SOURCE_SUBMISSION.md build instructions.
+- Provide screenshots of the widget, audio-source controls, caption history, and sidebar.
+- Complete an installed Firefox and real Meet verification before distribution; controlled fixtures do not establish this result.
+- Configure a valid maintainer contact in the store submission.
 
-SETUP
-
-You need a free Groq or OpenAI API key. Open the extension's settings, paste
-it, choose ASL or ISL, then press Start capture during a Meet call.
-
-HONEST LIMITATIONS
-
-• Google Meet only
-• The sign dictionaries are still small. Words without an entry are
-  fingerspelled, which is correct behaviour but slower to read.
-• Output is machine translation and has not been validated by Deaf signers or
-  qualified interpreters. Treat it as an assistive aid, not a substitute for a
-  human interpreter.
-```
-
-## Category
-
-`Social & Communication` — secondary: `Accessibility` **[decide]**
-
-## Tags
-
-```
-accessibility, sign language, ASL, ISL, google meet, deaf, captions, avatar
-```
-
-## Support
-
-- Support site: `https://github.com/walshdsouza/Bit-n-Build`
-- Support email: **[decide — a real address is required]**
-
-## Privacy policy
-
-Paste the contents of `store/PRIVACY.md`. A policy is mandatory because the
-add-on declares the `personalCommunications` data-collection permission.
-
-## Notes to reviewer
-
-```
-The bundled files in dist/ are produced by esbuild from the TypeScript sources
-in src/. Build instructions are in store/SOURCE_SUBMISSION.md and source is
-attached as required.
-
-The extension calls only api.groq.com and api.openai.com, and only to
-transcribe audio the user explicitly captures with their own API key. There is
-no backend, no analytics and no remote code execution — the 3D model and all
-libraries are bundled in the package.
-
-UNSAFE_VAR_ASSIGNMENT warnings come from the minified React and three.js
-builds inside dist/sidebar.js and dist/options.js. They are library internals,
-not extension code; the unminified sources are in the attached archive.
-```
-
-## Screenshots needed **[decide]**
-
-1. The sidebar open beside a Meet call, avatar mid-sign
-2. The settings page showing the API key fields
-3. The avatar close up with the gloss readout visible
-
-## Version
-
-Currently `0.1.0` in `manifest.json`. Bump before each submission — AMO rejects
-a version number it has already seen.
+Support: https://github.com/walshdsouza/Bit-n-Build

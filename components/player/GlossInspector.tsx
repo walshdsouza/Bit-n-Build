@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { GlossRow, SignPlan, TranscriptSegment } from "@/lib/types";
 import { describeHamNoSys } from "@/lib/hamnosys";
+import { signAt } from "@/lib/sign-plan";
 
 interface GlossInspectorProps {
   currentTime: number;
@@ -85,21 +86,23 @@ export default function GlossInspector({
     );
   }, [data, search]);
 
-  const activeIndex = data.findIndex(
+  const activeSign = useMemo(() => plan ? signAt(plan, currentTime) : null, [plan, currentTime]);
+  const rowEnds = useMemo(() => {
+    const ends = new Map<number, number>();
+    for (const item of plan?.items ?? []) {
+      if (item.sourceIndex !== undefined) ends.set(item.sourceIndex, item.endTime);
+    }
+    return ends;
+  }, [plan]);
+  const activeIndex = activeSign?.sourceIndex ?? (rowEnds.size ? -1 : data.findIndex(
     (r) => currentTime >= r.startTime && currentTime < r.endTime,
-  );
+  ));
 
   useEffect(() => {
     activeRef.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "nearest" });
   }, [activeIndex]);
 
-  // The sign currently being articulated, straight off the motion plan.
-  const activeSign = useMemo(() => {
-    if (!plan?.items.length) return null;
-    return plan.items.find((i) => currentTime >= i.startTime && currentTime < i.endTime) ?? null;
-  }, [plan, currentTime]);
-
-  const activeNmm = activeIndex >= 0 ? data[activeIndex]?.nmm ?? [] : [];
+  const activeNmm = activeSign?.nmm ?? (activeIndex >= 0 ? data[activeIndex]?.nmm ?? [] : []);
 
   return (
     <div className="flex flex-col h-full bg-surface-container-lowest border-l border-outline-variant/30 overflow-hidden">
@@ -138,7 +141,8 @@ export default function GlossInspector({
         ) : (
           filtered.map((row) => {
             const i = row.originalIndex;
-            const isActive = currentTime >= row.startTime && currentTime < row.endTime;
+            const isActive = i === activeIndex;
+            const isComplete = currentTime >= (rowEnds.get(i) ?? row.endTime);
             return (
               <div
                 key={`${row.startTime}-${i}`}
@@ -157,12 +161,12 @@ export default function GlossInspector({
                     className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
                       isActive
                         ? "text-primary bg-primary/10 border border-primary/30"
-                        : i < activeIndex
+                        : isComplete
                           ? "text-on-surface-variant bg-surface-container-low"
                           : "text-outline bg-transparent"
                     }`}
                   >
-                    {isActive ? "active" : i < activeIndex ? "synced" : "queued"}
+                    {isActive ? "signing" : isComplete ? "complete" : "queued"}
                   </span>
                 </div>
 

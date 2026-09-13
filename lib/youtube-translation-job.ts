@@ -72,7 +72,9 @@ export async function translateYouTubeTranscript(
     if (options.signal?.aborted) throw error;
     if (!(error instanceof RequestError) || error.code !== 'TRANSLATION_UNAVAILABLE' || ![429, 504].includes(error.status)) throw error;
     const retryAfterMs = 'retryAfterMs' in error && typeof error.retryAfterMs === 'number' && Number.isFinite(error.retryAfterMs) ? error.retryAfterMs : 5000;
-    const pollAfterMs = error.status === 429 ? Math.min(10 * 60 * 1000, retryAfterMs) : 1000;
+    // Preserve the provider's actual reset time. A UI may stop waiting sooner,
+    // but its saved continuation must not re-hit an exhausted model early.
+    const pollAfterMs = error.status === 429 ? Math.max(1000, retryAfterMs) : 1000;
     job.retryAt = Date.now() + pollAfterMs;
     return { jobToken: seal(job, options.signingKey), pollAfterMs };
   }

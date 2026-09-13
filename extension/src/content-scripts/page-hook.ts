@@ -1,186 +1,175 @@
+import { encodeMonoWav, LIVE_CHUNK_SECONDS } from "../../../lib/live-audio";
 const MARKER = "gesturesync";
-
-let audioCtx: AudioContext | null = null;
-let destination: MediaStreamAudioDestinationNode | null = null;
-let recorder: MediaRecorder | null = null;
-let capturing = false;
-let startingCapture = false;
-let captureSessionId: string | null = null;
-let captureGeneration = 0;
-const connectedTrackIds = new Set<string>();
-
-// Primary trigger: flush every ~8s so segments stay close to sentence-length
-// without too much delay. Tune later; correctness matters more than latency
-// right now.
-const FLUSH_MS = 8000;
-// Safety-net trigger: Whisper providers' file-size limits are tens of MB, far
-// above what 8s of Opus audio produces, but this caps runaway growth if a
-// stop() is ever delayed (e.g. a suspended background tab).
-const MAX_QUEUE_BYTES = 4 * 1024 * 1024;
-const TIMESLICE_MS = 1000; // how often we get a chance to check the size cap
-
-function ensureAudioGraph() {
-  if (!audioCtx) {
-    audioCtx = new AudioContext();
-    destination = audioCtx.createMediaStreamDestination();
-  }
-  return { audioCtx: audioCtx!, destination: destination! };
+const remoteTracks = new Map<string, MediaStreamTrack>();
+const connections = new Set<RTCPeerConnection>();
+type InputState = "starting" | "receiving" | "silent" | "muted" | "suspended" | "stalled" | "stopped";
+interface CaptureOptions { source?: "tab" | "microphone"; includeMicrophone?: boolean }
+interface ActiveCapture {
+  id: string; context: AudioContext;
+  sources: Map<string, { source: MediaStreamAudioSourceNode; gain: GainNode; track: MediaStreamTrack; cleanup: () => void }>;
+  microphones: MediaStreamTrack[]; worklet: AudioWorkletNode | null; output: GainNode | null;
+  watchdog: ReturnType<typeof setInterval> | null; stopping: boolean; flush: boolean; ready: boolean;
+  lastHeartbeat: number; receivedSeconds: number; level: number; hasInput: boolean; options: CaptureOptions;
+  finish: Promise<void> | null; flushed: (() => void) | null;
 }
-
+let active: ActiveCapture | null = null;
+const post = (session: ActiveCapture, type: string, fields: Record<string, unknown> = {}) => {
+  window.postMessage({ marker: MARKER, type, captureSessionId: session.id, ...fields }, location.origin);
+};
+function base64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer); let text = "";
+  for (let at = 0; at < bytes.length; at += 8192) text += String.fromCharCode(...bytes.subarray(at, at + 8192));
+  return btoa(text);
+}
+// Keep the hardware/WebRTC graph rate, then encode real resampled 16 kHz PCM.
+function pcm16k(samples: Float32Array, rate: number): Float32Array {
+  if (rate === 16000) return samples;
+  const ratio = rate / 16000, output = new Float32Array(Math.round(samples.length / ratio));
+  for (let i = 0; i < output.length; i++) {
+    const start = i * ratio, end = Math.min(samples.length, (i + 1) * ratio);
+    let total = 0, weight = 0;
+    for (let source = Math.floor(start); source < Math.ceil(end); source++) {
+      const amount = Math.max(0, Math.min(end, source + 1) - Math.max(start, source));
+      total += (samples[source] || 0) * amount; weight += amount;
+    }
+    output[i] = weight ? total / weight : 0;
+  }
+  return output;
+}
+function report(session: ActiveCapture, forced?: InputState) {
+  if (session !== active && forced !== "stopped") return;
+  const tracks = [...session.sources.values()].map(input => input.track);
+  const state = forced ?? (session.context.state !== "running" ? "suspended"
+    : tracks.length && tracks.every(track => track.readyState === "ended" || !track.enabled || track.muted) ? "muted"
+    : performance.now() - session.lastHeartbeat > 3000 ? "stalled"
+    : session.hasInput && session.level > .00001 ? "receiving" : "silent");
+  post(session, "INPUT_STATUS", { status: { state, level: state === "receiving" ? session.level : 0, receivedSeconds: session.receivedSeconds } });
+}
+function connectTrack(session: ActiveCapture, track: MediaStreamTrack) {
+  if (session.stopping || !session.worklet || track.kind !== "audio" || track.readyState === "ended" || session.sources.has(track.id)) return;
+  const source = session.context.createMediaStreamSource(new MediaStream([track])), gain = session.context.createGain();
+  source.connect(gain).connect(session.worklet);
+  const changed = () => report(session);
+  const ended = () => {
+    source.disconnect(); gain.disconnect(); session.sources.delete(track.id);
+    cleanup(); session.sources.forEach(input => { input.gain.gain.value = 1 / session.sources.size; });
+    if (session.microphones.includes(track) && !session.stopping) void finish(session, true).then(() => post(session, "SOURCE_ENDED"));
+    else report(session);
+  };
+  const cleanup = () => { track.removeEventListener("mute", changed); track.removeEventListener("unmute", changed); track.removeEventListener("ended", ended); };
+  session.sources.set(track.id, { source, gain, track, cleanup });
+  session.sources.forEach(input => { input.gain.gain.value = 1 / session.sources.size; });
+  track.addEventListener("mute", changed); track.addEventListener("unmute", changed); track.addEventListener("ended", ended, { once: true });
+}
+function remember(track: MediaStreamTrack) {
+  if (track.kind !== "audio" || remoteTracks.has(track.id)) return;
+  remoteTracks.set(track.id, track);
+  track.addEventListener("ended", () => remoteTracks.delete(track.id), { once: true });
+  if (active && active.options.source !== "microphone") connectTrack(active, track);
+}
 function patchRTCPeerConnection() {
-  const NativePC = window.RTCPeerConnection as typeof RTCPeerConnection & {
-    __gesturesyncPatched?: boolean;
-  };
-  if (!NativePC || NativePC.__gesturesyncPatched) return;
-
-  const Patched = new Proxy(NativePC, {
-    construct(target, args, newTarget) {
-      const pc = Reflect.construct(target, args, newTarget) as RTCPeerConnection;
-      pc.addEventListener("track", (event: RTCTrackEvent) => {
-        const track = event.track;
-        if (track.kind !== "audio" || connectedTrackIds.has(track.id)) return;
-        connectedTrackIds.add(track.id);
-
-        const { audioCtx: ctx, destination: dest } = ensureAudioGraph();
-        const remoteStream = new MediaStream([track]);
-        const source = ctx.createMediaStreamSource(remoteStream);
-        source.connect(dest);
-
-        track.addEventListener("ended", () => {
-          connectedTrackIds.delete(track.id);
-          source.disconnect();
-        });
+  const Native = window.RTCPeerConnection as typeof RTCPeerConnection & { __gesturesyncPatched?: boolean };
+  if (!Native || Native.__gesturesyncPatched) return;
+  const Patched = new Proxy(Native, { construct(target, args, newTarget) {
+    const connection = Reflect.construct(target, args, newTarget) as RTCPeerConnection;
+    connections.add(connection); connection.addEventListener("track", event => remember(event.track));
+    connection.addEventListener("connectionstatechange", () => { if (connection.connectionState === "closed") connections.delete(connection); });
+    return connection;
+  } });
+  Patched.__gesturesyncPatched = true; window.RTCPeerConnection = Patched;
+}
+function finish(session: ActiveCapture, flush: boolean): Promise<void> {
+  if (session.finish) return session.finish;
+  session.stopping = true; session.flush = flush;
+  if (session.watchdog) clearInterval(session.watchdog);
+  session.sources.forEach(input => { input.cleanup(); input.source.disconnect(); input.gain.disconnect(); });
+  session.microphones.forEach(track => track.stop());
+  session.finish = (async () => {
+    if (flush && session.ready && session.worklet && session.context.state === "running") {
+      await new Promise<void>(resolve => {
+        const timeout = setTimeout(resolve, 600);
+        session.flushed = () => { clearTimeout(timeout); resolve(); };
+        session.worklet!.port.postMessage("flush");
       });
-      return pc;
-    },
-  });
-  Patched.__gesturesyncPatched = true;
-  window.RTCPeerConnection = Patched;
-}
-
-function flushQueue(rec: MediaRecorder, queue: Blob[]) {
-  if (queue.length === 0) return;
-  const blob = new Blob(queue, { type: rec.mimeType });
-  console.log("[GestureSync] FLUSHED AUDIO", {
-    chunks: queue.length,
-    bytes: blob.size,
-    kb: (blob.size / 1024).toFixed(2),
-    type: blob.type,
-  });
-
-  window.postMessage({ marker: MARKER, type: "AUDIO_CHUNK", blob, captureSessionId }, location.origin);
-}
-
-/**
- * MediaRecorder's timeslice fires ondataavailable periodically, but per the
- * W3C spec, only the FULL concatenation of chunks since start() is
- * guaranteed playable — an individual mid-stream chunk lacks the container
- * header the first chunk carries, so providers correctly reject it as not a
- * valid media file. So this queue is only ever flushed by cleanly stop()ping
- * the recorder (never by slicing out part of it), which finalizes the
- * container and delivers everything queued as one complete file — then a
- * fresh recorder starts immediately for the next cycle.
- */
-function startNewRecorderCycle(generation: number) {
-  const { destination: dest } = ensureAudioGraph();
-
-  console.log("[GestureSync] CREATING RECORDER", {
-    streamActive: dest.stream.active,
-    tracks: dest.stream.getAudioTracks().map((track) => ({
-      id: track.id,
-      enabled: track.enabled,
-      muted: track.muted,
-      readyState: track.readyState,
-    })),
-  });
-
-  // Each recorder owns its container fragments. A stopped recorder can
-  // deliver its final event after a newer capture has already started.
-  const queue: Blob[] = [];
-  let queuedBytes = 0;
-
-  const rec = new MediaRecorder(dest.stream, { mimeType: "audio/webm;codecs=opus" });
-  recorder = rec;
-
-  rec.onstart = () => {
-    console.log("[GestureSync] RECORDER STARTED", {
-      state: rec.state,
-      mimeType: rec.mimeType,
-    });
-  };
-
-  rec.ondataavailable = (e) => {
-    if (e.data.size === 0) return;
-    queue.push(e.data);
-    queuedBytes += e.data.size;
-    if (queuedBytes >= MAX_QUEUE_BYTES && rec.state === "recording") {
-      rec.stop();
     }
-  };
-
-  rec.onstop = () => {
-    clearTimeout(flushTimer);
-    if (recorder === rec) recorder = null;
-    // A rapid Stop → Start supersedes the old tail. It must neither feed the
-    // new session nor create another recorder alongside the new one.
-    if (generation !== captureGeneration) return;
-    flushQueue(rec, queue);
-    if (capturing) startNewRecorderCycle(generation);
-  };
-
-  rec.start(TIMESLICE_MS);
-
-  const flushTimer = setTimeout(() => {
-    if (rec.state === "recording") rec.stop();
-  }, FLUSH_MS);
+    if (session.worklet) {
+      session.worklet.port.onmessage = null; session.worklet.onprocessorerror = null;
+      session.worklet.disconnect(); session.worklet.port.close();
+    }
+    session.output?.disconnect();
+    if (session.context.state !== "closed") await session.context.close().catch(() => {});
+    report(session, "stopped");
+    // A final WAV is sent before this ack; the bridge retains its owner to drain it.
+    post(session, "CAPTURE_STOPPED", { cancelled: !flush });
+    if (active === session) active = null;
+  })();
+  return session.finish;
 }
-
-async function startRecording(sessionId: string | null) {
-  if (capturing || startingCapture) return;
-  captureSessionId = sessionId;
-  startingCapture = true;
-  const generation = ++captureGeneration;
-  let timer: ReturnType<typeof setTimeout> | undefined;
+async function start(id: string, options: CaptureOptions, workletUrl: string) {
+  if (active) { if (active.id === id && !active.stopping) return; await finish(active, false); }
+  const session: ActiveCapture = { id, context: new AudioContext(), sources: new Map(), microphones: [], worklet: null, output: null, watchdog: null,
+    stopping: false, flush: false, ready: false, lastHeartbeat: performance.now(), receivedSeconds: 0, level: 0, hasInput: false, options, finish: null, flushed: null };
+  active = session; report(session, "starting");
   try {
-    const { audioCtx: context } = ensureAudioGraph();
-    if (context.state !== "running") {
-      await Promise.race([
-        context.resume(),
-        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Audio did not resume.")), 3000); }),
-      ]);
+    if (options.source === "microphone" || options.includeMicrophone) {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
+      if (session.stopping || active !== session) { stream.getTracks().forEach(track => track.stop()); return; }
+      session.microphones = stream.getAudioTracks();
+      if (!session.microphones.length) throw new Error("No microphone was available. Select an input and try again.");
     }
-    if (generation !== captureGeneration) return;
-    if (context.state !== "running") throw new Error("Meeting audio is suspended.");
-    capturing = true;
-    startNewRecorderCycle(generation);
-    window.postMessage({ marker: MARKER, type: "CAPTURE_STARTED", captureSessionId }, location.origin);
-  } catch {
-    if (generation !== captureGeneration) return;
-    capturing = false;
-    window.postMessage({ marker: MARKER, type: "CAPTURE_ERROR", captureSessionId }, location.origin);
-  } finally {
-    if (timer) clearTimeout(timer);
-    if (generation === captureGeneration) startingCapture = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try { await Promise.race([session.context.resume(), new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error("Audio is paused. Click in your meeting tab, then start again.")), 6000); })]); }
+    finally { clearTimeout(timeout); }
+    if (session.stopping || active !== session) return;
+    if (session.context.state !== "running") throw new Error("Audio is paused. Click in your meeting tab, then start again.");
+    await session.context.audioWorklet.addModule(workletUrl);
+    if (session.stopping || active !== session) return;
+    session.worklet = new AudioWorkletNode(session.context, "meeting-pcm", { processorOptions: { chunkSeconds: LIVE_CHUNK_SECONDS, statusIntervalSeconds: .25 } });
+    session.worklet.port.onmessage = ({ data }) => {
+      if (active !== session) return;
+      if (data?.type === "flushed") { session.flushed?.(); return; }
+      if (session.stopping && !session.flush) return;
+      if (data?.type === "status") {
+        session.lastHeartbeat = performance.now(); session.hasInput = data.hasInput === true;
+        session.level = Number.isFinite(data.rms) ? Math.max(0, Math.min(1, data.rms)) : 0;
+        session.receivedSeconds = Number.isFinite(data.receivedSeconds) ? Math.max(session.receivedSeconds, data.receivedSeconds) : session.receivedSeconds;
+        if (!session.stopping) report(session);
+      } else if (data?.type === "chunk" && data.samples instanceof Float32Array && Number.isFinite(data.sampleRate)) {
+        const duration = data.samples.length / data.sampleRate;
+        if (duration < .15 || duration > LIVE_CHUNK_SECONDS + .02) return;
+        const samples = pcm16k(data.samples, data.sampleRate);
+        post(session, "AUDIO_CHUNK", { audioBase64: base64(encodeMonoWav(samples, 16000)), duration: samples.length / 16000, mimeType: "audio/wav" });
+      }
+    };
+    session.worklet.onprocessorerror = () => {
+      if (session.stopping) return;
+      post(session, "CAPTURE_ERROR", { message: "Audio processing stopped. Start sharing again." }); void finish(session, false);
+    };
+    session.output = session.context.createGain(); session.output.gain.value = 0;
+    session.worklet.connect(session.output).connect(session.context.destination);
+    if (options.source !== "microphone") {
+      connections.forEach(connection => connection.getReceivers().forEach(receiver => remember(receiver.track)));
+      remoteTracks.forEach(track => connectTrack(session, track));
+    }
+    session.microphones.forEach(track => connectTrack(session, track));
+    session.ready = true;
+    session.context.addEventListener("statechange", () => report(session));
+    session.watchdog = setInterval(() => report(session), 1000);
+    post(session, "CAPTURE_STARTED");
+  } catch (error) {
+    if (session.stopping || active !== session) return;
+    post(session, "CAPTURE_ERROR", { message: error instanceof Error ? error.message : "Meeting audio could not start. Reload the meeting and try again." });
+    await finish(session, false);
   }
 }
-
-function stopRecording() {
-  if (startingCapture) { captureGeneration++; startingCapture = false; }
-  capturing = false;
-  const rec = recorder;
-  recorder = null;
-  if (rec && rec.state !== "inactive") rec.stop();
-  window.postMessage({ marker: MARKER, type: "CAPTURE_STOPPED", captureSessionId }, location.origin);
-}
-
 window.addEventListener("message", (event: MessageEvent) => {
-  if (event.source !== window) return;
+  if (event.source !== window || event.origin !== location.origin) return;
   const data = event.data;
-  if (!data || data.marker !== MARKER) return;
-  if (data.type === "START_CAPTURE") void startRecording(typeof data.captureSessionId === "string" ? data.captureSessionId : null);
-  if (data.type === "STOP_CAPTURE") stopRecording();
+  if (!data || data.marker !== MARKER || typeof data.captureSessionId !== "string") return;
+  if (data.type === "START_CAPTURE" && typeof data.workletUrl === "string") void start(data.captureSessionId, {
+    source: data.options?.source === "microphone" ? "microphone" : "tab", includeMicrophone: data.options?.includeMicrophone === true,
+  }, data.workletUrl);
+  if ((data.type === "STOP_CAPTURE" || data.type === "CANCEL_CAPTURE") && active && active.id === data.captureSessionId) void finish(active, data.type === "STOP_CAPTURE");
 });
-
+window.addEventListener("pagehide", () => { if (active) void finish(active, false); });
 patchRTCPeerConnection();
-
-export {}; // force module scope — prevents top-level names colliding across content-script files

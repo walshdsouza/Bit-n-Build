@@ -26,7 +26,7 @@ const { translateYouTubeTranscript, isTranslationJob } = require('./.build/lib/y
     equal(isTranslationJob(pending.jobToken), true);
     equal(pending.jobToken.includes(options.signingKey), false);
     equal(pending.jobToken.includes(options.groqKey), false);
-    equal(pending.pollAfterMs, 5000);
+    equal(pending.pollAfterMs > 4500 && pending.pollAfterMs <= 5000, true);
     equal(pending.segments, undefined);
 
     global.fetch = async () => { throw new Error('Polling before the provider reset must not send requests'); };
@@ -56,6 +56,16 @@ const { translateYouTubeTranscript, isTranslationJob } = require('./.build/lib/y
     await rejects(translateYouTubeTranscript(pending.jobToken + 'tampered', options), 'YOUTUBE_JOB_INVALID');
     Date.now = () => originalNow() + 61 * 60 * 1000;
     await rejects(translateYouTubeTranscript(pending.jobToken, options), 'YOUTUBE_JOB_INVALID');
+    Date.now = originalNow;
+
+    // A long reset must survive client retries instead of being shortened to
+    // ten minutes and re-billing/repeating an already exhausted model batch.
+    global.fetch = async () => new Response('', { status: 429, headers: { 'retry-after': '1200' } });
+    const longReset = await translateYouTubeTranscript({ segments: source.slice(0, 1), language: 'hi' }, options);
+    equal(longReset.pollAfterMs > 1_190_000, true);
+    Date.now = () => originalNow() + 11 * 60 * 1000;
+    global.fetch = async () => { throw new Error('Must honor reset beyond ten minutes'); };
+    equal((await translateYouTubeTranscript(longReset.jobToken, options)).pollAfterMs > 530_000, true);
     Date.now = originalNow;
 
     const cancelled = new AbortController(); cancelled.abort();

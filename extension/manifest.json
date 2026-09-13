@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "UNMUTE — Live Sign Language for Meet",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Live ASL signs and captions in a draggable Google Meet widget, with an optional Firefox sidebar.",
   "author": "UNMUTE",
 
@@ -34,8 +34,7 @@
     "tabs",
     "storage",
     "https://meet.google.com/*",
-    "https://api.groq.com/*",
-    "https://api.openai.com/*"
+    "https://unmute-ai.vercel.app/*"
   ],
 
   "background": {

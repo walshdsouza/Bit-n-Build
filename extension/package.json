@@ -1,6 +1,6 @@
 {
-  "name": "gesturesync-firefox-extension",
-  "version": "0.1.0",
+  "name": "unmute-firefox-extension",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -19,6 +19,7 @@
     "web-ext": "^10.6.0"
   },
   "dependencies": {
+    "lucide-react": "1.45.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "three": "^0.180.0"

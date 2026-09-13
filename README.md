@@ -100,7 +100,7 @@ Groq is preferred when both Groq and OpenAI are configured. OpenAI is used when 
 
 Caption translation uses Groq `gpt-oss-120b`, with `gpt-oss-20b` as a fallback when the primary model has a long quota reset. Both use caption IDs to preserve timing. Provider reset times are respected, and long YouTube translations retain completed work in signed continuation tokens between requests. Longer quota delays show when to retry; an ordinary import waits for up to eight minutes. Retrying the same URL resumes saved progress until the token expires after one hour.
 
-The website uses server credentials for imports, speech translation and Live Meetings. Users do not need to provide API keys. The standalone Firefox extension has its own provider configuration because it can run independently of the website.
+The website uses server credentials for imports, speech translation and Live Meetings. The Firefox extension uses the hosted UNMUTE live endpoint. Users do not need to provide API keys in either interface.
 
 `.env.local` is ignored by Git. Provider secrets belong in server environment variables, without a `NEXT_PUBLIC_` prefix. The two Supabase variables above are public client configuration.
 
@@ -171,7 +171,7 @@ lib/dictionaries/        Sign vocabulary and language data
 utils/supabase/          Optional authentication and database clients
 public/                  Branding, screenshots and the NEXA model
 scripts/                 Downloader preparation and demo recording
-extension/               Standalone Firefox Meet widget and sidebar
+extension/               Firefox Meet widget and sidebar using hosted transcription
 tests/                   Pipeline, API and browser tests
 ```
 
@@ -263,7 +263,7 @@ npx vercel link
 npx vercel deploy --prod
 ```
 
-`.vercelignore` excludes local logs, test artifacts and the standalone extension from website deployments. Native media dependencies are included through `next.config.ts` file tracing.
+`.vercelignore` excludes local logs, test artifacts and the Firefox extension from website deployments. Native media dependencies are included through `next.config.ts` file tracing.
 
 ## Limits and troubleshooting
 
@@ -286,9 +286,9 @@ For local development without Supadata, an optional Python caption fallback is a
 
 ## Firefox extension
 
-`extension/` contains a standalone Firefox extension for Google Meet with separate provider settings. A floating NEXA widget appears inside Meet and can be moved, resized, minimized or hidden and reopened. It shows the latest captions and shares the existing audio recorder with the optional sidebar. Only one view can own capture at a time. The web app's Live Meetings feature does not require the extension.
+`extension/` contains the UNMUTE Firefox add-on for Google Meet. Its floating NEXA widget and sidebar share the website's live-caption queue and avatar playback. Choose **Meeting audio**, **My microphone**, or **Meeting + microphone**; an input meter, timestamped caption history, and **Now signing** show what is being heard and performed. Transcription uses the hosted UNMUTE endpoint; no personal API key is needed. The web app's Live Meetings feature also works without the extension.
 
-After installing the root dependencies:
+With Node.js 22:
 
 ```sh
 cd extension
@@ -296,9 +296,13 @@ npm ci
 npm run build
 ```
 
-In Firefox, open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select `extension/manifest.json`. Configure a transcription key in the extension's own settings before starting capture.
+In Firefox, open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select `extension/manifest.json`. Temporary add-ons must be loaded again after Firefox restarts.
 
-Reload an open Meet tab after loading the add-on, then select **Start** in the widget. It captures other participants' incoming audio; your own microphone is not included. **Hide** and **Minimize** keep the session running; use **Stop** to end capture. Temporary add-ons must be loaded again after Firefox restarts.
+Reload an open Meet tab after loading the add-on, choose the audio source, then press **Start**. Microphone sources request permission explicitly. Independent five-second WAV recordings are sent for English captions and ASL signs. **Stop** releases capture and finishes queued audio and signing; **Cancel** discards pending work.
+
+Drag or resize the widget, or use its keyboard handles. **Hide** and **Minimize** keep capture running while pausing avatar playback; reopen to resume. Only one extension view owns meeting capture at a time, and closing its frame releases ownership. Keep a Meet tab active when starting from the sidebar. To try your microphone outside Meet, use the hosted Live Meetings link in extension Settings.
+
+Controlled tests cover the shared UI, native audio, ownership and avatar movement. Firefox 155 checks install the add-on and exercise real WebRTC, audio worklets and extension ports against a controlled meeting fixture. A Google Meet call with real participant speech remains a separate release verification.
 
 See [build instructions](extension/README-BUILD.txt), [reviewer/source instructions](extension/store/SOURCE_SUBMISSION.md), and the [extension privacy policy](extension/store/PRIVACY.md) for details and packaging commands.
 

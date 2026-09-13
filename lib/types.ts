@@ -124,6 +124,8 @@ export interface SignEntry {
 
 export interface SignPlanItem {
   gloss: string;
+  /** Original gloss row, retained when dense speech delays its signing. */
+  sourceIndex?: number;
   startTime: number;
   endTime: number;
   entry: SignEntry | null;
