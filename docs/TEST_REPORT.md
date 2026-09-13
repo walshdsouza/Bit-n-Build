@@ -58,7 +58,7 @@ Current deployment: `dpl_5jEjgpbJuGozWTAaMoU8eWY4gfYY`, at `https://unmute-ai.ve
 - Supadata is now configured and real YouTube caption/audio-generation requests have passed. Provider quotas and plan limits still apply. Private/unavailable videos and sources without usable English speech/captions cannot be guaranteed; explicit non-English transcript results are rejected because the web ASL pipeline currently expects English input. Browser-tab capture remains available as an alternate source path.
 - Uploaded files are limited to 4 MB on Vercel; dashboard recording stops at ten minutes or below 3.8 MB. This app converts speech/captions into signing; it does not recognize hand movements in videos.
 - Device saves belong to this browser and origin. Clearing browser data removes them; they are not cross-device account synchronization.
-- Live Meetings requires desktop Chrome/Edge with Share tab audio. It captures audio played by the tab, not the user's microphone. Five-second capture windows and transcription/signing add delay. Backlog limits stop sharing while queued results finish.
+- Meeting-tab capture requires desktop Chrome/Edge with Share tab audio. The current release also supports explicitly selected microphone-only and combined input, as verified in the live microphone section below. Five-second capture windows and transcription/signing add delay. Backlog limits stop sharing while queued results finish.
 - Sign-up email delivery, Google OAuth configuration and account-owned persistence were not tested with a real signed-in user. App project reads are scoped to the signed-in owner. Supabase account storage requires the project's schema, authentication redirects and access policies to be configured separately.
 - Software and motion checks do not certify the linguistic accuracy of every generated sign. The current ASL dictionary/rules coverage limits interpretation quality.
 
@@ -71,14 +71,12 @@ npm run build
 # Start the server separately, then:
 API_BASE_URL=http://localhost:3113 npm run test:api
 PLAYWRIGHT_BASE_URL=http://localhost:3112 PLAYWRIGHT_CHANNEL=msedge UI_TEST_SERVER_PROVIDER=groq npm run test:browser
-# Native tab capture with the generated local fixture:
-PLAYWRIGHT_BASE_URL=https://unmute-ai.vercel.app node logs/check-live-meeting.mjs
 # Record the actual UI and encode a captioned MP4 (requires FFmpeg):
 PLAYWRIGHT_BASE_URL=https://unmute-ai.vercel.app node scripts/record-demo.mjs
 node scripts/finalize-demo.mjs
 ```
 
-In PowerShell set `$env:NAME='value'` before each command. Source changes remain in the working tree. Deployment uses the authenticated Vercel CLI; automatic GitHub publishing has not been configured.
+In PowerShell set `$env:NAME='value'` before each command. Generated speech fixtures, native-capture helpers and raw evidence under `logs/` are local QA artifacts and are not distributed in the repository. The committed browser tests provide reproducible controlled-input checks. Deployments use the authenticated Vercel CLI.
 ## Live microphone and playback repair — 13 September 2026
 
 Deployment: `dpl_DMYbDzrPDhyisT4nXR7xijKdbaWV`, at https://unmute-ai.vercel.app/live.

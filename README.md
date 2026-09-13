@@ -52,8 +52,6 @@ The built-in demo works without an account or API key. Saved tracks appear under
 
 ## Run locally
 
-> **Source status:** The live UNMUTE app linked above contains release changes that have not yet been published to `main`. Cloning this repository currently gives the earlier source version. Feature descriptions, service configuration, API additions and the source layout below describe the deployed release. The basic setup commands here work with `main`; release-only development tools are identified below.
-
 **Requirements:** Node.js **22.x**, npm, and an internet connection for dependency installation and the first development/build run.
 
 ```sh
@@ -67,7 +65,7 @@ Open [localhost:3111](http://localhost:3111), or go straight to the [demo player
 
 No environment file is needed for the demo. To import media or use Live Meetings, configure the relevant services below and restart the development server.
 
-FFmpeg is supplied by the app's dependencies. In the deployed release's source, `predev` and `build` also download and verify a pinned official yt-dlp binary on Windows x64 and Linux x64 for the local YouTube fallback. Other local platforms skip that downloader; hosted Supadata imports do not depend on it. This preparation script is pending publication to `main`.
+FFmpeg is supplied by the app's dependencies. On Windows x64 and Linux x64, `predev` and `build` also download and verify a pinned official yt-dlp binary for the local YouTube fallback. Other local platforms skip that downloader; hosted Supadata imports do not depend on it.
 
 ## Configure services
 
@@ -208,8 +206,6 @@ Ordinary transcription/translation endpoints accept the applicable `x-groq-api-k
 
 ## Development and tests
 
-The release source includes additional test and recording tools that are pending publication to `main`. On the current `main` branch, use `dev`, `build`, `start`, `lint`, `test` and `test:api`; the browser suite and demo-recording scripts below are references for the deployed release's working tree.
-
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Start the development server |
@@ -307,5 +303,6 @@ See [build instructions](extension/README-BUILD.txt), [reviewer/source instructi
 ## Documentation and credits
 
 - [Architecture](docs/ARCHITECTURE.md) — notation, language profiles and pipeline design; some internal names predate UNMUTE.
+- [Test report](docs/TEST_REPORT.md) — release validation, real-service checks and current limitations.
 - [NEXA license](public/models/NEXA-LICENSE.txt) — attribution and terms for the included NEXA implementation kit.
 - Design references: [Kozha](https://github.com/zhan-a/Kozha) for the HamNoSys/SiGML pipeline and [GenASL](https://github.com/sanaro99/GenASL) for prosody-aware avatar planning.

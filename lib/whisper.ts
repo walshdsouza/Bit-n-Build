@@ -47,7 +47,9 @@ export async function transcribeAudioFile(audioBlob: Blob, filename: string, gro
   formData.append('response_format', 'verbose_json');
   formData.append('timestamp_granularities[]', 'segment');
 
-  const deadline = AbortSignal.timeout(options.timeoutMs ?? (process.env.VERCEL ? 40_000 : 120_000));
+  // This helper also runs in the standalone extension, without Node globals.
+  const defaultTimeout = typeof process !== 'undefined' && process.env.VERCEL ? 40_000 : 120_000;
+  const deadline = AbortSignal.timeout(options.timeoutMs ?? defaultTimeout);
   const signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline;
   const throwIfCancelled = () => {
     if (!signal.aborted) return;
@@ -141,4 +143,42 @@ export async function transcribeAudioFile(audioBlob: Blob, filename: string, gro
     duration: segments.reduce((duration, segment) => Math.max(duration, segment.end), providedDuration),
     provider
   };
+}
+
+export interface KeyValidationResult {
+  valid: boolean;
+  provider: 'groq' | 'openai';
+  error?: string;
+}
+
+/**
+ * Confirms a key actually authenticates, without spending transcription
+ * credits or requiring an audio file. Hits each provider's models-list
+ * endpoint, which is free and only checks auth — a 200 means the key is
+ * real, a 401/403 means it isn't. A truthy, non-empty string is not the same
+ * thing as a working key (revoked, mistyped, or wrong-provider keys all
+ * still pass a presence check), so this is the check that actually matters
+ * before telling a user transcription is ready to go.
+ */
+export async function validateApiKey(
+  provider: 'groq' | 'openai',
+  key: string
+): Promise<KeyValidationResult> {
+  const endpoint =
+    provider === 'groq'
+      ? 'https://api.groq.com/openai/v1/models'
+      : 'https://api.openai.com/v1/models';
+
+  try {
+    const response = await fetch(endpoint, {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (response.ok) return { valid: true, provider };
+    if (response.status === 401 || response.status === 403) {
+      return { valid: false, provider, error: 'Key was rejected by the provider.' };
+    }
+    return { valid: false, provider, error: `Unexpected response: ${response.status}` };
+  } catch (err) {
+    return { valid: false, provider, error: `Could not reach ${provider}: ${String(err)}` };
+  }
 }

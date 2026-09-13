@@ -6,6 +6,7 @@ import NexaAvatar from "../../../components/player/NexaAvatar";
 import { generateGloss } from "../../../lib/gloss-engine";
 import { buildSignPlan } from "../../../lib/sign-plan";
 import { analyzeProsody } from "../../../lib/prosody";
+import { validateApiKey } from "../../../lib/whisper";
 import type { SignLanguageCode, SignPlan, TranscriptSegment } from "../../../lib/types";
 
 /** Transcript → gloss → motion plan, entirely in-process. */
@@ -20,6 +21,8 @@ async function buildTranscriptPlan(segments: TranscriptSegment[], lang: SignLang
   return buildSignPlan(rows, { lang, prosody });
 }
 
+type KeyStatus = "unset" | "checking" | "valid" | "invalid";
+
 /**
  * The extension is standalone: there is no GestureSync server behind it. Every
  * stage below runs in the sidebar itself — Whisper is called directly with the
@@ -32,21 +35,40 @@ export function App() {
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [plan, setPlan] = useState<SignPlan | null>(null);
   const [lang, setLang] = useState<SignLanguageCode>("ASL");
-  const [hasKey, setHasKey] = useState<boolean | null>(null);
+  const [keyStatus, setKeyStatus] = useState<KeyStatus>("unset");
 
   const handleRef = useRef<CaptureHandle | null>(null);
   const timeRef = useRef(0);
   const [currentTime, setCurrentTime] = useState(0);
 
-  // The avatar needs a real model URL; inside an extension that is an
-  // extension-relative path, not a server route.
   const modelUrl = browser.runtime.getURL("dist/nexa.glb");
 
   useEffect(() => {
-    getSettings().then((s) => {
-      setLang(s.targetLanguage);
-      setHasKey(Boolean(s.groqApiKey || s.openaiApiKey));
-    });
+    let cancelled = false;
+    let checkGeneration = 0;
+    const checkKey = async () => {
+      const generation = ++checkGeneration;
+      const settings = await getSettings();
+      if (cancelled || generation !== checkGeneration) return;
+      setLang(settings.targetLanguage);
+      const provider = settings.groqApiKey ? "groq" : settings.openaiApiKey ? "openai" : null;
+      if (!provider) { setKeyStatus("unset"); return; }
+      setKeyStatus("checking");
+      const key = provider === "groq" ? settings.groqApiKey! : settings.openaiApiKey!;
+      const result = await validateApiKey(provider, key);
+      if (!cancelled && generation === checkGeneration) setKeyStatus(result.valid ? "valid" : "invalid");
+    };
+    void checkKey();
+    const onStorageChanged = (
+      changes: Record<string, browser.storage.StorageChange>,
+      area: string,
+    ) => {
+      if (area !== "local") return;
+      if ("targetLanguage" in changes) setLang(changes.targetLanguage.newValue === "ISL" ? "ISL" : "ASL");
+      if ("groqApiKey" in changes || "openaiApiKey" in changes) void checkKey();
+    };
+    browser.storage.onChanged.addListener(onStorageChanged);
+    return () => { cancelled = true; browser.storage.onChanged.removeListener(onStorageChanged); };
   }, []);
 
   useEffect(() => {
@@ -60,8 +82,6 @@ export function App() {
     return () => { cancelled = true; };
   }, [segments, lang]);
 
-  // Drive the avatar clock while capturing, anchored to wall time so it cannot
-  // drift with the frame rate.
   useEffect(() => {
     if (!capturing || !plan?.duration) return;
     const startedAt = performance.now();
@@ -124,12 +144,22 @@ export function App() {
         />
       </div>
 
-      {hasKey === false && (
+      {keyStatus === "unset" && (
         <p className="hint">
           No API key set — transcription will not run.{" "}
           <button className="link" onClick={openOptions}>
             Open settings
           </button>
+        </p>
+      )}
+      {keyStatus === "checking" && <p className="hint">Checking API key…</p>}
+      {keyStatus === "invalid" && (
+        <p className="error">
+          API key was rejected — check it in{" "}
+          <button className="link" onClick={openOptions}>
+            settings
+          </button>
+          .
         </p>
       )}
 

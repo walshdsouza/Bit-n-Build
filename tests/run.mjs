@@ -89,6 +89,7 @@ if (apiOnly) {
   run("timing.test.js");
   run("regressions.test.js");
   run("media.test.js");
+  run("whisper.test.js");
   run("live.test.js");
   run("live-api.test.js");
   run("youtube-audio.test.js");
