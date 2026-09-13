@@ -3,8 +3,11 @@ import { normalizeSegments } from "@/lib/segments";
 import { generateGloss } from "@/lib/gloss-engine";
 import { analyzeProsody } from "@/lib/prosody";
 import { buildSignPlan } from "@/lib/sign-plan";
-import { getProfile, isSupported } from "@/lib/sign-languages";
+import { getProfile } from "@/lib/sign-languages";
+import { readJsonObject, readLanguage, readDuration, RequestError } from "@/lib/request-validation";
 import { dictionaryStats } from "@/lib/dictionaries";
+
+export const maxDuration = 60;
 
 /**
  * POST /api/translate
@@ -17,8 +20,9 @@ import { dictionaryStats } from "@/lib/dictionaries";
 export async function POST(req: NextRequest) {
   const started = Date.now();
   try {
-    const body = await req.json().catch(() => ({}));
-    const { lang, duration } = body as { lang?: string; duration?: number };
+    const body = await readJsonObject(req);
+    const lang = readLanguage(body.lang);
+    const duration = readDuration(body.duration);
 
     // Drops unusable entries and repairs bad timestamps rather than letting
     // them crash the gloss engine or poison the plan with NaN times.
@@ -27,13 +31,6 @@ export async function POST(req: NextRequest) {
     if (segments.length === 0) {
       return NextResponse.json(
         { error: "Provide a non-empty `segments` array, each with a `text` string." },
-        { status: 400 },
-      );
-    }
-
-    if (lang && !isSupported(lang)) {
-      return NextResponse.json(
-        { error: `Unsupported sign language "${lang}". Try ASL, ISL or BSL.` },
         { status: 400 },
       );
     }
@@ -84,7 +81,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal Server Error";
-    console.error("[/api/translate]", error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    if (!(error instanceof RequestError)) console.error("[/api/translate]", error);
+    return NextResponse.json({ error: message }, { status: error instanceof RequestError ? error.status : 500 });
   }
 }

@@ -2,6 +2,9 @@
 import { useState, useTransition } from "react";
 import { login, signup } from "@/app/auth/actions";
 import { createClient } from "@/utils/supabase/client";
+import { isSupabaseConfigured } from "@/utils/supabase/config";
+import Link from "next/link";
+import BrandLogo from "@/components/brand/BrandLogo";
 
 interface AuthModalProps {
   mode: "signin" | "signup";
@@ -14,36 +17,50 @@ export default function AuthModal({ mode, onClose, onModeChange }: AuthModalProp
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const accountsConfigured = isSupabaseConfigured();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
     const formData = new FormData();
     formData.append("email", email);
     formData.append("password", password);
     if (mode === "signup") formData.append("name", name);
 
     startTransition(async () => {
-      const res = mode === "signin" ? await login(formData) : await signup(formData);
-      if (res?.error) {
-        setError(res.error);
+      try {
+        const res = mode === "signin" ? await login(formData) : await signup(formData);
+        if (res && "error" in res && typeof res.error === "string") setError(res.error);
+        if (res && "success" in res && typeof res.success === "string") setSuccess(res.success);
+      } catch {
+        setError("The account service could not be reached. Please try again later.");
       }
     });
   };
 
   const handleGoogleLogin = async () => {
-    const supabase = createClient();
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      }
-    });
+    if (!accountsConfigured) {
+      setError("Accounts are not configured on this deployment. Continue without signing in below.");
+      return;
+    }
+    setError(null);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: `${window.location.origin}/auth/callback` },
+      });
+      if (error) setError(error.message);
+    } catch {
+      setError("Google sign-in is unavailable. Please try again later.");
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <div role="dialog" aria-modal="true" aria-label={mode === "signin" ? "Sign in" : "Create account"} className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-[#0A0A0F]/80 backdrop-blur-md"
@@ -51,7 +68,7 @@ export default function AuthModal({ mode, onClose, onModeChange }: AuthModalProp
       />
 
       {/* Modal card */}
-      <div className="relative w-full max-w-sm bg-surface-container-low border border-outline-variant/50 rounded-xl shadow-2xl shadow-black/60 overflow-hidden">
+      <div className="relative max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto bg-surface-container-low border border-outline-variant/50 rounded-xl shadow-2xl shadow-black/60">
         {/* Top gradient */}
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-secondary-container via-primary to-tertiary-container" />
 
@@ -61,10 +78,7 @@ export default function AuthModal({ mode, onClose, onModeChange }: AuthModalProp
         <div className="relative z-10 p-6">
           {/* Logo */}
           <div className="flex items-center gap-space-sm mb-space-lg">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-secondary-container flex items-center justify-center shadow-[0_0_15px_rgba(76,215,246,0.4)]">
-              <span className="material-symbols-outlined text-on-primary text-[18px]">sign_language</span>
-            </div>
-            <span className="font-extrabold text-headline-sm text-on-surface tracking-tight">UNMUTE</span>
+            <BrandLogo />
           </div>
 
           {/* Tab toggle */}
@@ -91,16 +105,25 @@ export default function AuthModal({ mode, onClose, onModeChange }: AuthModalProp
             </button>
           </div>
 
+          {!accountsConfigured && (
+            <div role="status" className="mb-4 rounded-lg border border-primary/25 bg-primary/5 p-3 text-sm text-on-surface-variant">
+              Accounts are not configured on this deployment. You can use the dashboard and demo without signing in.
+              <Link href="/dashboard" onClick={onClose} className="mt-2 block font-semibold text-primary underline underline-offset-4">Continue to dashboard</Link>
+              <Link href="/player/demo" onClick={onClose} className="mt-2 block font-semibold text-primary underline underline-offset-4">Try the demo</Link>
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="flex flex-col gap-space-sm">
             {error && (
-              <div className="p-2 mb-2 text-sm text-red-500 bg-red-500/10 border border-red-500/20 rounded-md">
+              <div role="alert" className="p-2 mb-2 text-sm text-error bg-error/10 border border-error/20 rounded-md">
                 {error}
               </div>
             )}
+            {success && <p role="status" className="text-sm text-primary">{success}</p>}
             {mode === "signup" && (
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-on-surface-variant font-medium">Full Name</label>
+                <label htmlFor="auth-name" className="text-xs text-on-surface-variant font-medium">Full Name</label>
                 <input
+                  id="auth-name"
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -111,8 +134,9 @@ export default function AuthModal({ mode, onClose, onModeChange }: AuthModalProp
             )}
 
             <div className="flex flex-col gap-1">
-              <label className="text-xs text-on-surface-variant font-medium">Email Address</label>
+              <label htmlFor="auth-email" className="text-xs text-on-surface-variant font-medium">Email Address</label>
               <input
+                id="auth-email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -124,12 +148,11 @@ export default function AuthModal({ mode, onClose, onModeChange }: AuthModalProp
 
             <div className="flex flex-col gap-1">
               <div className="flex items-center justify-between">
-                <label className="text-xs text-on-surface-variant font-medium">Password</label>
-                {mode === "signin" && (
-                  <a href="#" className="text-xs text-primary hover:text-primary/80 transition-colors">Forgot?</a>
-                )}
+                <label htmlFor="auth-password" className="text-xs text-on-surface-variant font-medium">Password</label>
               </div>
               <input
+                id="auth-password"
+                autoComplete={mode === "signin" ? "current-password" : "new-password"}
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -141,7 +164,7 @@ export default function AuthModal({ mode, onClose, onModeChange }: AuthModalProp
 
             <button
               type="submit"
-              disabled={isPending}
+              disabled={isPending || !accountsConfigured}
               className="mt-space-sm flex items-center justify-center gap-2 px-space-lg py-space-sm rounded-full bg-gradient-to-r from-secondary-container to-primary-container font-label-button text-label-button text-on-primary shadow-lg shadow-primary/20 hover:shadow-primary/40 hover:scale-[1.02] active:scale-[0.99] transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
               {isPending ? (
@@ -161,8 +184,9 @@ export default function AuthModal({ mode, onClose, onModeChange }: AuthModalProp
           {/* Social */}
           <button 
             type="button"
+            disabled={isPending || !accountsConfigured}
             onClick={handleGoogleLogin}
-            className="w-full flex items-center justify-center gap-2 rounded-lg py-2.5 bg-surface-container-high border border-outline-variant/40 text-on-surface text-sm font-medium hover:border-primary/30 hover:bg-surface-container-highest transition-all"
+            className="w-full flex items-center justify-center gap-2 rounded-lg py-2.5 bg-surface-container-high border border-outline-variant/40 text-on-surface text-sm font-medium hover:border-primary/30 hover:bg-surface-container-highest transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -186,6 +210,7 @@ export default function AuthModal({ mode, onClose, onModeChange }: AuthModalProp
 
         {/* Close button */}
         <button
+          aria-label="Close sign-in dialog"
           onClick={onClose}
           className="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all"
         >

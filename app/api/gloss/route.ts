@@ -3,7 +3,10 @@ import { GlossResponse } from "@/lib/types";
 import { normalizeSegments } from "@/lib/segments";
 import { generateGloss } from "@/lib/gloss-engine";
 import { analyzeProsody } from "@/lib/prosody";
-import { getProfile, isSupported } from "@/lib/sign-languages";
+import { getProfile } from "@/lib/sign-languages";
+import { readJsonObject, readLanguage, RequestError } from "@/lib/request-validation";
+
+export const maxDuration = 60;
 
 /**
  * POST /api/gloss
@@ -15,21 +18,14 @@ import { getProfile, isSupported } from "@/lib/sign-languages";
  */
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const { lang } = body as { lang?: string };
+    const body = await readJsonObject(req);
+    const lang = readLanguage(body.lang);
 
     const segments = normalizeSegments((body as { segments?: unknown }).segments);
 
     if (segments.length === 0) {
       return NextResponse.json(
         { error: "Provide a non-empty `segments` array, each with a `text` string." },
-        { status: 400 },
-      );
-    }
-
-    if (lang && !isSupported(lang)) {
-      return NextResponse.json(
-        { error: `Unsupported sign language "${lang}". Try ASL, ISL or BSL.` },
         { status: 400 },
       );
     }
@@ -58,7 +54,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(payload);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal Server Error";
-    console.error("[/api/gloss]", error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    if (!(error instanceof RequestError)) console.error("[/api/gloss]", error);
+    return NextResponse.json({ error: message }, { status: error instanceof RequestError ? error.status : 500 });
   }
 }

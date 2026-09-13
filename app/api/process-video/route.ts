@@ -1,374 +1,222 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
-import { execFile } from 'child_process';
-import path from 'path';
-import fs from 'fs';
-import { getTempDir, cleanupTempFiles } from '@/lib/temp-manager';
-import { extractAudioTrack } from '@/lib/ffmpeg';
-import { transcribeAudioFile } from '@/lib/whisper';
-import { downloadYouTubeAudio } from '@/lib/youtube-audio';
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@/utils/supabase/server";
+import { execFile } from "child_process";
+import { randomUUID } from "crypto";
+import path from "path";
+import fs from "fs";
+import { getTempDir, cleanupTempFiles } from "@/lib/temp-manager";
+import { extractAudioTrack, SilentAudioError } from "@/lib/ffmpeg";
+import { requireTranscriptionKey, transcribeAudioFile } from "@/lib/whisper";
+import { downloadYouTubeAudio, YouTubeAudioError } from "@/lib/youtube-audio";
+import { extractYouTubeVideoId } from "@/lib/youtube-url";
+import { normalizeSegments } from "@/lib/segments";
+import { isRecord, readJsonObject, RequestError } from "@/lib/request-validation";
+import type { TranscriptSegment } from "@/lib/types";
+import { fetchNativeYouTubeCaptions } from "@/lib/youtube-captions";
+import { readProviderYouTube } from "@/lib/youtube-provider";
 
-/**
- * Fallback for YouTube videos with no captions: download the audio and
- * transcribe it with Whisper. Without this, any video whose uploader did not
- * publish captions fails outright.
- */
-async function transcribeYouTubeAudio(
-  req: NextRequest,
-  videoId: string,
-  captionError?: string,
-) {
-  const groqKey = req.headers.get('x-groq-api-key') || process.env.GROQ_API_KEY;
-  const openaiKey = req.headers.get('x-openai-api-key') || process.env.OPENAI_API_KEY;
+export const runtime = "nodejs";
+export const maxDuration = 180;
 
-  if (!groqKey && !openaiKey) {
-    // Say which of the two situations actually applies, so the fix is obvious.
-    const cause = captionError?.startsWith('Caption reader unavailable')
-      ? 'The caption reader is not working on this machine (install it with "pip install youtube-transcript-api")'
-      : 'This video has no captions';
+interface MediaResult {
+  duration: number;
+  text: string;
+  segments: TranscriptSegment[];
+}
+interface PersistInput extends MediaResult {
+  title: string;
+  sourceType: "youtube" | "upload";
+  sourceUrl?: string | null;
+  file?: File;
+  buffer?: Buffer;
+}
 
-    return NextResponse.json(
-      {
-        error:
-          `${cause}, so its audio needs transcribing — but no Groq or OpenAI API key is configured. ` +
-          'Add GROQ_API_KEY to .env.local, or set a key in Settings.',
-        source: 'youtube',
-        captionError,
-      },
-      { status: 422 },
-    );
+/** Saving is optional: a missing account or database must not discard speech. */
+async function persistTranscript(input: PersistInput) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    return { projectId: null, sourceUrl: input.sourceUrl ?? null };
   }
-
-  let temps: string[] = [];
   try {
-    const tempDir = await getTempDir();
-    const audio = await downloadYouTubeAudio(videoId, tempDir);
-    temps = audio.tempFiles;
-
-    const buffer = await fs.promises.readFile(audio.audioPath);
-    const blob = new Blob([buffer], { type: 'audio/mpeg' });
-    const transcription = await transcribeAudioFile(
-      blob,
-      `${videoId}.mp3`,
-      groqKey,
-      openaiKey,
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { projectId: null, sourceUrl: input.sourceUrl ?? null };
+    let sourceUrl = input.sourceUrl ?? null;
+    if (input.file && input.buffer) {
+      const extension = input.file.name.split(".").pop()?.replace(/[^a-zA-Z0-9]/g, "") || "mp4";
+      const storagePath = `${user.id}/${randomUUID()}.${extension}`;
+      const { error } = await supabase.storage.from("media").upload(storagePath, input.buffer, {
+        contentType: input.file.type || "application/octet-stream", upsert: false,
+      });
+      if (!error) sourceUrl = supabase.storage.from("media").getPublicUrl(storagePath).data.publicUrl;
+      else console.warn("[process-video] Media could not be saved:", error.message);
+    }
+    const { data: project, error } = await supabase.from("projects").insert({
+      user_id: user.id, title: input.title, source_type: input.sourceType,
+      source_url: sourceUrl, source_duration: input.duration, status: "ready",
+    }).select().single();
+    if (error || !project) {
+      console.warn("[process-video] Project could not be saved:", error?.message);
+      return { projectId: null, sourceUrl, persistenceWarning: "Translation is ready, but could not be saved to your account." };
+    }
+    const { error: segmentError } = await supabase.from("transcript_segments").insert(
+      input.segments.map((segment, index) => ({
+        project_id: project.id, sequence_index: index,
+        start_time: segment.start, end_time: segment.end, original_text: segment.text,
+      })),
     );
-
-    return NextResponse.json({
-      success: true,
-      source: 'youtube',
-      duration: transcription.duration || audio.duration || 0,
-      text: transcription.text,
-      segments: transcription.segments,
-      metadata: {
-        provider: transcription.provider,
-        fallback: 'yt-dlp+whisper',
-        reason: 'no captions available',
-        title: audio.title,
-        videoId,
-        processedAt: new Date().toISOString(),
-      },
-    });
-  } catch (err: any) {
-    console.error('[youtube audio fallback]', err);
-    return NextResponse.json(
-      {
-        error: err?.message || 'Failed to transcribe audio for a video without captions.',
-        source: 'youtube',
-        captionError,
-      },
-      { status: 502 },
-    );
-  } finally {
-    await cleanupTempFiles(temps);
+    if (segmentError) {
+      console.warn("[process-video] Transcript could not be saved:", segmentError.message);
+      return { projectId: null, sourceUrl, persistenceWarning: "Translation is ready, but its transcript could not be saved." };
+    }
+    return { projectId: project.id, sourceUrl };
+  } catch (error) {
+    console.warn("[process-video] Optional persistence failed:", error instanceof Error ? error.message : "Unknown database error");
+    return { projectId: null, sourceUrl: input.sourceUrl ?? null, persistenceWarning: "Translation is ready, but could not be saved to your account." };
   }
 }
 
-// Extract an 11-char video ID from any standard YouTube URL
-function extractYouTubeVideoId(input: string): string | null {
-  if (!input) return null;
-  const trimmed = input.trim();
-  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
-    return trimmed;
+async function readYouTubeCaptions(videoId: string): Promise<{ segments: TranscriptSegment[]; error?: string }> {
+  // Native Node fetch works in serverless functions without a Python install.
+  try {
+    const segments = await fetchNativeYouTubeCaptions(videoId);
+    if (segments.length) return { segments };
+  } catch (error) {
+    // Keep the failure class visible in runtime logs without signed URLs.
+    console.info("[process-video] Caption lookup:", error instanceof Error ? error.name : "unavailable");
   }
-  const patterns = [
-    /(?:youtube\.com\/watch\?.*v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/i,
-    /youtube\.com\/.*[?&]v=([a-zA-Z0-9_-]{11})/i,
-  ];
-  for (const p of patterns) {
-    const m = trimmed.match(p);
-    if (m && m[1]) return m[1];
+  if (process.env.VERCEL) return { segments: [], error: "English captions are unavailable from this server." };
+  const script = path.join(process.cwd(), "scripts", "get_youtube_transcript.py");
+  const commands = [process.env.PYTHON_PATH, "python", "python3", ...(process.platform === "win32" ? ["py"] : [])].filter((command): command is string => !!command);
+  for (const command of commands) {
+    try {
+      const stdout = await new Promise<string>((resolve, reject) => {
+        execFile(command, [script, videoId], {
+          encoding: "utf8", timeout: 45_000, maxBuffer: 8 * 1024 * 1024,
+          env: { ...process.env, PYTHONIOENCODING: "utf-8" },
+        }, (error, out) => {
+          // The script can return a handled caption error and exit nonzero.
+          if (out.trim()) resolve(out);
+          else if (error) reject(error);
+          else resolve(out);
+        });
+      });
+      const data: unknown = JSON.parse(stdout);
+      if (!isRecord(data)) continue;
+      const segments = data.success === true ? normalizeSegments(data.segments) : [];
+      return { segments, error: typeof data.error === "string" ? data.error : undefined };
+    } catch {
+      // Try the next installed interpreter, without hardcoded personal paths.
+    }
   }
-  return null;
+  return { segments: [], error: "Caption reader unavailable. Install Python and youtube-transcript-api, or configure PYTHON_PATH." };
 }
 
 export async function POST(req: NextRequest) {
-  let tempVideoPath: string | null = null;
-  let tempAudioPath: string | null = null;
-
+  const temps: string[] = [];
   try {
     const contentType = req.headers.get("content-type") || "";
-    let url: string | null = null;
+    let sourceUrl: string | null = null;
     let file: File | null = null;
-
-    // Parse input (JSON or FormData)
+    let jobToken: string | undefined;
     if (contentType.includes("application/json")) {
-      const body = await req.json();
-      url = body.url || body.youtubeUrl;
+      const body = await readJsonObject(req);
+      const url = body.url ?? body.youtubeUrl;
+      if (typeof url !== "string") throw new RequestError("Provide a valid YouTube URL.");
+      sourceUrl = url.trim();
+      if (body.jobToken !== undefined && typeof body.jobToken !== "string") throw new RequestError("Invalid YouTube import session.");
+      jobToken = typeof body.jobToken === "string" ? body.jobToken : undefined;
     } else if (contentType.includes("multipart/form-data")) {
-      const formData = await req.formData();
-      url = formData.get("url") as string | null;
-      file = formData.get("file") as File | null;
+      const form = await req.formData().catch(() => null);
+      if (!form) throw new RequestError("The multipart upload could not be read.");
+      const url = form.get("url");
+      const uploaded = form.get("file");
+      if (url !== null && typeof url !== "string") throw new RequestError("The URL field must be text.");
+      if (uploaded !== null && !(uploaded instanceof File)) throw new RequestError("The file field must contain a media file.");
+      sourceUrl = typeof url === "string" ? url.trim() : null;
+      file = uploaded instanceof File ? uploaded : null;
+    } else {
+      throw new RequestError("Send a YouTube URL as JSON or a media file as multipart/form-data.");
     }
 
-    // Identify if it's YouTube
-    const videoId = url ? extractYouTubeVideoId(url) : null;
-
-    // 1. YouTube Flow
-    if (videoId) {
-      const pythonScriptPath = path.join(process.cwd(), 'scripts', 'get_youtube_transcript.py');
-      
-      const cmds = [
-        // Real Python 3.11 install path (Windows Store/Alias)
-        'C:\\Users\\soham\\AppData\\Local\\Microsoft\\WindowsApps\\python3.11.exe',
-        'C:\\Users\\soham\\AppData\\Local\\Microsoft\\WindowsApps\\python.exe',
-        'C:\\Users\\WALSH\\AppData\\Local\\Programs\\Python\\Python313\\python.exe',
-        'python',
-        'py',
-        'python3',
-      ];
-      let stdout = '';
-      let stderr = '';
-      let lastError = null;
-
-      for (const cmd of cmds) {
-        try {
-          const result = await new Promise<{stdout: string, stderr: string}>((resolve, reject) => {
-            execFile(cmd, [pythonScriptPath, videoId], { 
-              encoding: 'utf8',
-              env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
-            }, (error, out, err) => {
-              if (error) {
-                // The python script exits with code 1 if it fails to fetch (e.g. no captions).
-                // If we have valid JSON in stdout, it's a handled application error, not a python execution failure.
-                try {
-                  const data = JSON.parse(out);
-                  if (data && typeof data.success === 'boolean') {
-                    return resolve({stdout: out, stderr: err});
-                  }
-                } catch (_) {}
-                reject(error);
-              }
-              else resolve({stdout: out, stderr: err});
-            });
-          });
-          stdout = result.stdout;
-          stderr = result.stderr;
-          lastError = null;
-          break; // success
-        } catch (e) {
-          lastError = e;
+    const groqKey = req.headers.get("x-groq-api-key") || process.env.GROQ_API_KEY;
+    const openaiKey = req.headers.get("x-openai-api-key") || process.env.OPENAI_API_KEY;
+    const youtubeKey = req.headers.get("x-supadata-api-key") || process.env.SUPADATA_API_KEY;
+    if (sourceUrl) {
+      const videoId = extractYouTubeVideoId(sourceUrl);
+      if (!videoId) throw new RequestError("Provide a valid YouTube URL.");
+      if (jobToken && !youtubeKey?.trim()) throw new RequestError("The YouTube import key is no longer configured. Add it in Settings to resume.", 422, "YOUTUBE_NOT_CONFIGURED");
+      const hosted = youtubeKey?.trim() ? await readProviderYouTube(videoId, youtubeKey, jobToken) : null;
+      if (hosted?.jobToken) return NextResponse.json({ pending: true, jobToken: hosted.jobToken, pollAfterMs: 2500 }, { status: 202 });
+      const captions = hosted?.segments ? { segments: hosted.segments } : await readYouTubeCaptions(videoId);
+      let result: MediaResult;
+      let provider: string;
+      let title = `YouTube Video: ${videoId}`;
+      let fallback: string | undefined;
+      if (captions.segments.length) {
+        result = {
+          segments: captions.segments,
+          text: captions.segments.map((segment) => segment.text).join(" "),
+          duration: captions.segments.reduce((duration, segment) => Math.max(duration, segment.end), 0),
+        };
+        provider = hosted ? "supadata" : "youtube-captions";
+      } else {
+        if (process.env.VERCEL && !youtubeKey?.trim()) {
+          throw new RequestError("YouTube is blocking direct access from this deployment. Add a Supadata key in Settings for YouTube imports, or use tab audio capture below.", 422, "YOUTUBE_NOT_CONFIGURED");
         }
+        if (!groqKey?.trim() && !openaiKey?.trim()) {
+          throw new RequestError("YouTube captions could not be read. Add a Groq or OpenAI API key in Settings to transcribe the audio instead.", 422, "TRANSCRIPTION_NOT_CONFIGURED");
+        }
+        const tempDir = await getTempDir();
+        let audio;
+        try { audio = await downloadYouTubeAudio(videoId, tempDir); }
+        catch (error) {
+          if (error instanceof RequestError) throw error;
+          if (error instanceof YouTubeAudioError) throw new RequestError(error.message, error.status, "YOUTUBE_AUDIO_UNAVAILABLE");
+          throw new RequestError(error instanceof Error ? error.message : "YouTube audio could not be downloaded. Upload a recording with spoken audio instead.", 502, "YOUTUBE_AUDIO_UNAVAILABLE");
+        }
+        temps.push(...audio.tempFiles);
+        const buffer = await fs.promises.readFile(audio.audioPath);
+        const transcription = await transcribeAudioFile(new Blob([buffer], { type: "audio/mpeg" }), `${videoId}.mp3`, groqKey, openaiKey);
+        result = { ...transcription, duration: Math.max(transcription.duration, audio.duration || 0) };
+        provider = transcription.provider;
+        title = audio.title || title;
+        fallback = "yt-dlp+whisper";
       }
-
-      // The caption reader can fail for reasons that have nothing to do with
-      // the video — Python missing from PATH, youtube_transcript_api not
-      // installed. Those break every video, so fall back to audio here too
-      // rather than dead-ending the request.
-      if (lastError) {
-        console.error('Python execution failed after trying all commands:', lastError);
-        return await transcribeYouTubeAudio(
-          req,
-          videoId,
-          `Caption reader unavailable: ${(lastError as any)?.message || String(lastError)}`,
-        );
-      }
-
-      try {
-        const data = JSON.parse(stdout);
-
-        // Captions are unavailable for a large share of videos. Rather than
-        // failing, pull the audio with yt-dlp and run it through the same
-        // Whisper path that already serves uploaded files.
-        if (!data.success || !Array.isArray(data.segments) || data.segments.length === 0) {
-          return await transcribeYouTubeAudio(req, videoId, data?.error);
-        }
-
-        const text = data.segments.map((s: any) => s.text).join(' ');
-        const duration = data.segments.length > 0 
-          ? data.segments[data.segments.length - 1].end 
-          : 0;
-
-        // Save to DB
-        let projectId: string | null = null;
-        let dbError = null;
-        const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data: project, error: insertError } = await supabase.from('projects').insert({
-            user_id: user.id,
-            title: `YouTube Video: ${videoId}`,
-            source_type: 'youtube',
-            source_url: url,
-            source_duration: duration,
-            status: 'ready'
-          }).select().single();
-          
-          if (insertError) {
-            console.error("YouTube DB Insert Error:", insertError);
-            dbError = insertError;
-          }
-          
-          if (project) {
-            projectId = project.id;
-            
-            // Insert transcript segments
-            if (data.segments && data.segments.length > 0) {
-              const segmentsToInsert = data.segments.map((s: any, i: number) => ({
-                project_id: projectId,
-                sequence_index: i,
-                start_time: s.start,
-                end_time: s.end,
-                original_text: s.text,
-              }));
-              
-              await supabase.from('transcript_segments').insert(segmentsToInsert);
-            }
-          }
-        } else {
-          dbError = "User not logged in according to supabase.auth.getUser()";
-        }
-
-        return NextResponse.json({
-          success: true,
-          source: 'youtube',
-          duration,
-          text,
-          segments: data.segments,
-          projectId,
-          metadata: {
-            provider: 'youtube-transcript-api',
-            videoId,
-            processedAt: new Date().toISOString(),
-            dbError
-          }
-        });
-      } catch (parseError: any) {
-        console.error('Python Output Parse Error:', parseError.message);
-        console.error('STDOUT:', stdout);
-        console.error('STDERR:', stderr);
-        return NextResponse.json({ 
-          error: 'Failed to parse YouTube transcript data', 
-          stdout, 
-          stderr
-        }, { status: 500 });
-      }
-    }
-
-    // 2. Local MP4 / Video File Flow
-    if (file) {
-      const tempDir = await getTempDir();
-      const uniqueId = `job_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-      tempVideoPath = path.join(tempDir, `${uniqueId}_video.mp4`);
-      tempAudioPath = path.join(tempDir, `${uniqueId}_audio.mp3`);
-
-      // Write video file to disk
-      const arrayBuffer = await file.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      await fs.promises.writeFile(tempVideoPath, buffer);
-
-      // Extract lightweight MP3
-      await extractAudioTrack(tempVideoPath, tempAudioPath);
-
-      // Extract API Keys from headers or fallback to environment variables
-      const groqKey = req.headers.get("x-groq-api-key") || process.env.GROQ_API_KEY;
-      const openaiKey = req.headers.get("x-openai-api-key") || process.env.OPENAI_API_KEY;
-
-      // Load extracted MP3 as Blob for transcription
-      const audioBuffer = await fs.promises.readFile(tempAudioPath);
-      const audioBlob = new Blob([audioBuffer], { type: 'audio/mpeg' });
-
-      // Transcribe via Whisper
-      const transcription = await transcribeAudioFile(audioBlob, `${uniqueId}.mp3`, groqKey, openaiKey);
-
-      // Save to DB
-      let projectId: string | null = null;
-      let finalPublicUrl = null;
-      
-      const supabase = await createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (user) {
-        // Upload the video to Supabase Storage
-        // Use a unique file name in the 'media' bucket, under the user's ID
-        const fileExt = file.name.split('.').pop() || 'mp4';
-        const storagePath = `${user.id}/${uniqueId}.${fileExt}`;
-        
-        const { error: uploadError } = await supabase
-          .storage
-          .from('media')
-          .upload(storagePath, buffer, {
-            contentType: file.type || 'video/mp4',
-            upsert: false
-          });
-          
-        if (uploadError) {
-          console.error("Storage upload error:", uploadError);
-          // Proceed anyway but without source_url
-        } else {
-          const { data: publicUrlData } = supabase.storage.from('media').getPublicUrl(storagePath);
-          finalPublicUrl = publicUrlData.publicUrl;
-        }
-
-        const { data: project } = await supabase.from('projects').insert({
-          user_id: user.id,
-          title: file.name,
-          source_type: 'upload',
-          source_url: finalPublicUrl,
-          source_duration: transcription.duration,
-          status: 'ready'
-        }).select().single();
-        
-        if (project) {
-          projectId = project.id;
-          
-          // Insert transcript segments
-          if (transcription.segments && transcription.segments.length > 0) {
-            const segmentsToInsert = transcription.segments.map((s: any, i: number) => ({
-              project_id: projectId,
-              sequence_index: i,
-              start_time: s.start,
-              end_time: s.end,
-              original_text: s.text,
-            }));
-            
-            await supabase.from('transcript_segments').insert(segmentsToInsert);
-          }
-        }
-      }
-
+      const persistence = await persistTranscript({ ...result, title, sourceType: "youtube", sourceUrl });
       return NextResponse.json({
-        success: true,
-        source: 'file',
-        duration: transcription.duration,
-        text: transcription.text,
-        segments: transcription.segments,
-        projectId,
-        metadata: {
-          provider: transcription.provider,
-          filename: file.name,
-          processedAt: new Date().toISOString()
-        }
+        success: true, source: "youtube", ...result, ...persistence,
+        metadata: { provider, videoId, title, fallback, processedAt: new Date().toISOString() },
       });
     }
 
-    return NextResponse.json({ error: "Provide either a valid YouTube URL or a video File." }, { status: 400 });
-
-  } catch (error: any) {
-    console.error("Video processing error:", error);
-    return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+    if (!file || !file.size) throw new RequestError("Provide a non-empty video or audio file.");
+    const maxUploadMb = process.env.VERCEL ? 4 : 100;
+    if (file.size > maxUploadMb * 1024 * 1024) throw new RequestError(`The media file exceeds ${maxUploadMb} MB. Upload a smaller recording.`, 413);
+    requireTranscriptionKey(groqKey, openaiKey);
+    const tempDir = await getTempDir();
+    const uniqueId = randomUUID();
+    const inputPath = path.join(tempDir, `${uniqueId}.media`);
+    const audioPath = path.join(tempDir, `${uniqueId}.mp3`);
+    temps.push(inputPath, audioPath);
+    const buffer = Buffer.from(await file.arrayBuffer());
+    await fs.promises.writeFile(inputPath, buffer);
+    try { await extractAudioTrack(inputPath, audioPath); }
+    catch (error) {
+      if (error instanceof SilentAudioError) throw new RequestError(error.message, 422, "NO_SPEECH");
+      throw new RequestError("Audio could not be read from this file. Upload a valid video or audio recording with a sound track.", 422);
+    }
+    const audioBuffer = await fs.promises.readFile(audioPath);
+    const transcription = await transcribeAudioFile(new Blob([audioBuffer], { type: "audio/mpeg" }), `${uniqueId}.mp3`, groqKey, openaiKey);
+    const persistence = await persistTranscript({ ...transcription, title: file.name, sourceType: "upload", file, buffer });
+    return NextResponse.json({
+      success: true, source: "file", ...transcription, ...persistence,
+      metadata: { provider: transcription.provider, filename: file.name, processedAt: new Date().toISOString() },
+    });
+  } catch (error) {
+    if (!(error instanceof RequestError)) console.error("[process-video]", error);
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Media processing failed.", ...(error instanceof RequestError && error.code ? { code: error.code } : {}) },
+      { status: error instanceof RequestError ? error.status : 500 });
   } finally {
-    // 3. Robust Cleanup of temporary files
-    await cleanupTempFiles([tempVideoPath, tempAudioPath]);
+    await cleanupTempFiles(temps);
   }
 }

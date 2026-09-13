@@ -1,15 +1,21 @@
 import IngestionCard from "@/components/dashboard/IngestionCard";
 import ProcessingQueue from "@/components/dashboard/ProcessingQueue";
-import UsageChart from "@/components/dashboard/UsageChart";
 import EngineStatus from "@/components/dashboard/EngineStatus";
 import RecentTranslations from "@/components/dashboard/RecentTranslations";
+import type { DashboardProject } from "@/components/dashboard/project";
+import { connection } from "next/server";
 
 import { createClient } from '@/utils/supabase/server';
 import { isSupabaseConfigured } from '@/utils/supabase/config';
 
 export default async function DashboardPage() {
-  let activeJobs: any[] = [];
-  let recentJobs: any[] = [];
+  // Read runtime availability, never serialize credentials into client props.
+  await connection();
+  const serverTranscriptionProvider = process.env.GROQ_API_KEY?.trim()
+    ? "groq"
+    : process.env.OPENAI_API_KEY?.trim() ? "openai" : null;
+  let activeJobs: DashboardProject[] = [];
+  let recentJobs: DashboardProject[] = [];
 
   // Guarded: without NEXT_PUBLIC_SUPABASE_* the client factory throws, which
   // during prerendering fails the production build outright. Translation does
@@ -24,7 +30,8 @@ export default async function DashboardPage() {
           .from('projects')
           .select('*')
           .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .returns<DashboardProject[]>();
 
         if (data) {
           activeJobs = data.filter(p => p.status === 'processing');
@@ -41,7 +48,7 @@ export default async function DashboardPage() {
       {/* Page header */}
       <div className="mb-space-lg">
         <p className="font-label-eyebrow text-label-eyebrow text-on-surface-variant uppercase tracking-widest mb-1">
-          GestureSync AI
+          UNMUTE
         </p>
         <h1 className="font-headline-md text-headline-md text-on-surface">Dashboard</h1>
       </div>
@@ -50,15 +57,14 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-space-md">
         {/* Left column — main ingestion card (spans 2 cols) */}
         <div className="lg:col-span-2 flex flex-col gap-space-md">
-          <IngestionCard />
+          <IngestionCard serverTranscriptionProvider={serverTranscriptionProvider} serverYouTubeConfigured={Boolean(process.env.SUPADATA_API_KEY?.trim())} />
           <ProcessingQueue jobs={activeJobs} />
-          <RecentTranslations translations={recentJobs} />
         </div>
 
-        {/* Right column — metrics */}
+        {/* Keep saved tracks visible beside the import form. */}
         <div className="flex flex-col gap-space-md">
-          <UsageChart />
-          <EngineStatus />
+          <RecentTranslations translations={recentJobs} />
+          <EngineStatus serverTranscriptionProvider={serverTranscriptionProvider} />
         </div>
       </div>
     </div>

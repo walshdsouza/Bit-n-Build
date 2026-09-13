@@ -1,5 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0');
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/plus-jakarta-sans";
+@import "@fontsource-variable/material-symbols-outlined";
 @import "tailwindcss";
 
 @theme {
@@ -57,8 +58,20 @@
   --color-on-error-container: #ffdad6;
 
   /* ── Typography ── */
-  --font-sans: 'Inter', system-ui, sans-serif;
-  --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-sans: 'Inter Variable', system-ui, sans-serif;
+  --font-display: 'Plus Jakarta Sans Variable', system-ui, sans-serif;
+  --font-body-md: 'Inter Variable', system-ui, sans-serif;
+  --font-body-sm: 'Inter Variable', system-ui, sans-serif;
+  --font-body-lg: 'Inter Variable', system-ui, sans-serif;
+  --font-label-eyebrow: 'Inter Variable', system-ui, sans-serif;
+  --font-label-tech: 'Inter Variable', system-ui, sans-serif;
+  --font-headline-sm: 'Plus Jakarta Sans Variable', system-ui, sans-serif;
+  --font-headline-md: 'Plus Jakarta Sans Variable', system-ui, sans-serif;
+  --font-headline-lg: 'Plus Jakarta Sans Variable', system-ui, sans-serif;
+  --font-headline-lg-mobile: 'Plus Jakarta Sans Variable', system-ui, sans-serif;
+  --font-display-hero: 'Plus Jakarta Sans Variable', system-ui, sans-serif;
+  --font-display-hero-mobile: 'Plus Jakarta Sans Variable', system-ui, sans-serif;
+  --font-label-button: 'Plus Jakarta Sans Variable', system-ui, sans-serif;
   --font-mono: ui-monospace, 'Cascadia Code', 'Courier New', monospace;
 
   /* ── Radius ── */
@@ -88,6 +101,7 @@
     overscroll-behavior: none;
     background-color: #131318;
     color: #e4e1e9;
+    font-family: var(--font-sans);
   }
 
   ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -113,7 +127,7 @@
 
 /* Material Symbols font */
 .material-symbols-outlined {
-  font-family: 'Material Symbols Outlined';
+  font-family: 'Material Symbols Outlined Variable';
   font-weight: normal;
   font-style: normal;
   font-size: 24px;
@@ -125,6 +139,8 @@
   word-wrap: normal;
   direction: ltr;
   -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'liga';
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
 
 /* Glow utilities */

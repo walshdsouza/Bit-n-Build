@@ -37,7 +37,11 @@ function detectEmotion(text: string): { emotion: EmotionLabel; confidence: numbe
   let bestHits = 0;
 
   (Object.keys(EMOTION_LEXICON) as EmotionLabel[]).forEach((emo) => {
-    const hits = EMOTION_LEXICON[emo].filter((w) => lower.includes(w)).length;
+    // Match words and common inflections, not incidental substrings: "know"
+    // and "another" must not trigger the negative word "no".
+    const hits = EMOTION_LEXICON[emo].filter((w) => words.some((word) =>
+      word === w || word === `${w}s` || word === `${w}ed` || word === `${w}ing`,
+    )).length;
     if (hits > bestHits) {
       bestHits = hits;
       best = emo;

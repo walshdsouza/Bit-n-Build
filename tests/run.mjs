@@ -26,7 +26,20 @@ const SOURCES = [
   "lib/prosody.ts",
   "lib/sign-languages.ts",
   "lib/segments.ts",
+  "lib/request-validation.ts",
+  "lib/whisper.ts",
+  "lib/live-audio.ts",
+  "lib/live-api.ts",
+  "components/live/chunk-queue.ts",
+  "lib/ffmpeg.ts",
+  "lib/youtube-url.ts",
+  "lib/youtube-captions.ts",
+  "lib/youtube-provider.ts",
+  "lib/youtube-audio.ts",
   "lib/avatar/pose-solver.ts",
+  "lib/avatar/motion-timeline.ts",
+  "lib/avatar/arm-ik.ts",
+  "components/player/avatar/nexaRig.ts",
   "lib/dictionaries/index.ts",
 ];
 
@@ -74,4 +87,11 @@ if (apiOnly) {
   compile();
   run("pipeline.test.js");
   run("timing.test.js");
+  run("regressions.test.js");
+  run("media.test.js");
+  run("live.test.js");
+  run("live-api.test.js");
+  run("youtube-audio.test.js");
+  run("youtube-provider.test.js");
+  run("motion.test.js");
 }

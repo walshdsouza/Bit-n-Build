@@ -6,6 +6,7 @@ import UserProfile from "./UserProfile";
 const breadcrumbMap: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/settings": "Settings",
+  "/live": "Live Meetings",
 };
 
 export default function TopBar() {
@@ -13,29 +14,20 @@ export default function TopBar() {
   const title = breadcrumbMap[pathname] ?? (pathname.startsWith("/player") ? "Translation Player" : "UNMUTE");
 
   return (
-    <header className="h-14 flex items-center gap-4 px-space-md border-b border-outline-variant/30 bg-surface-container-lowest/60 backdrop-blur-sm sticky top-0 z-30">
+    <header className="min-h-14 flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1 border-b border-outline-variant/30 bg-surface-container-lowest/60 backdrop-blur-sm sticky top-0 z-30">
       {/* Title */}
       <div className="flex items-center gap-2">
-        <span className="text-on-surface-variant text-sm font-extrabold tracking-tight">UNMUTE</span>
-        <span className="text-outline">/</span>
+        <span className="hidden text-on-surface-variant text-sm font-extrabold tracking-tight sm:inline">UNMUTE</span>
+        <span className="hidden text-outline sm:inline">/</span>
         <span className="text-on-surface text-sm font-semibold">{title}</span>
       </div>
 
-      <div className="ml-auto flex items-center gap-3">
-        {/* Engine status badge */}
+      <div className="ml-auto flex items-center gap-2">
+        <Link href="/live" aria-label="Live Meetings" aria-current={pathname === "/live" ? "page" : undefined} className="flex min-h-11 items-center gap-1 rounded-lg px-1.5 text-xs font-semibold text-primary hover:bg-primary/10"><span aria-hidden="true" className="material-symbols-outlined text-[18px]">video_chat</span><span className="hidden sm:inline">Live Meetings</span><span className="sm:hidden">Live</span></Link>
+        {/* Product capability, not an unmeasured service health claim. */}
         <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container border border-outline-variant/40 text-xs text-on-surface-variant">
-          <span className="relative flex h-1.5 w-1.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-60" />
-            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-primary" />
-          </span>
-          Engine Online · 42ms
+          ASL
         </div>
-
-        {/* Notifications */}
-        <button className="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all relative">
-          <span className="material-symbols-outlined text-[18px]">notifications</span>
-          <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-primary rounded-full border-2 border-surface-container-lowest" />
-        </button>
 
         {/* New translation */}
         <Link

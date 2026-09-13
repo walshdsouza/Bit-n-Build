@@ -1,16 +1,9 @@
 "use client";
-import Link from "next/link";
+import type { DashboardProject } from "./project";
 
 interface ProcessingQueueProps {
-  jobs: any[];
+  jobs: DashboardProject[];
 }
-
-const stageColors: Record<string, string> = {
-  "CWASA Render": "text-primary",
-  "Gloss Bridge": "text-tertiary",
-  "Whisper STT": "text-secondary",
-  "Complete": "text-on-surface-variant",
-};
 
 export default function ProcessingQueue({ jobs = [] }: ProcessingQueueProps) {
   if (jobs.length === 0) {

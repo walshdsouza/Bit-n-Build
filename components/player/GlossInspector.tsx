@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useMemo } from "react";
-import { GlossRow, SignPlan } from "@/lib/types";
+import { GlossRow, SignPlan, TranscriptSegment } from "@/lib/types";
 import { describeHamNoSys } from "@/lib/hamnosys";
 
 interface GlossInspectorProps {
@@ -14,6 +14,7 @@ interface GlossInspectorProps {
    * database persists — so edits target the source rather than the gloss.
    */
   onUpdateSource?: (index: number, text: string) => void;
+  sourceSegments?: TranscriptSegment[];
 }
 
 function formatTime(s: number): string {
@@ -28,6 +29,7 @@ export default function GlossInspector({
   plan,
   lang = "ASL",
   onUpdateSource,
+  sourceSegments,
 }: GlossInspectorProps) {
   const [search, setSearch] = useState("");
   const [fallbackRows, setFallbackRows] = useState<GlossRow[]>([]);
@@ -67,11 +69,10 @@ export default function GlossInspector({
     };
   }, [rows]);
 
-  const data = rows?.length ? rows : fallbackRows;
-
-  useEffect(() => {
-    activeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [currentTime]);
+  const data = useMemo(() => rows?.length ? rows : sourceSegments ? sourceSegments.map((segment) => ({
+    startTime: segment.start, endTime: segment.end, sourceText: segment.text,
+    gloss: "", nmm: [], status: "queued" as const,
+  })) : fallbackRows, [rows, sourceSegments, fallbackRows]);
 
   // Rows carry their original index so that editing and the synced/queued
   // status still address the right row while a search filter is applied.
@@ -85,8 +86,12 @@ export default function GlossInspector({
   }, [data, search]);
 
   const activeIndex = data.findIndex(
-    (r) => currentTime >= r.startTime && currentTime <= r.endTime,
+    (r) => currentTime >= r.startTime && currentTime < r.endTime,
   );
+
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "nearest" });
+  }, [activeIndex]);
 
   // The sign currently being articulated, straight off the motion plan.
   const activeSign = useMemo(() => {
@@ -133,7 +138,7 @@ export default function GlossInspector({
         ) : (
           filtered.map((row) => {
             const i = row.originalIndex;
-            const isActive = currentTime >= row.startTime && currentTime <= row.endTime;
+            const isActive = currentTime >= row.startTime && currentTime < row.endTime;
             return (
               <div
                 key={`${row.startTime}-${i}`}
@@ -179,7 +184,7 @@ export default function GlossInspector({
                 {onUpdateSource ? (
                   <input
                     type="text"
-                    value={row.sourceText}
+                    value={sourceSegments?.[i]?.text ?? row.sourceText}
                     onChange={(e) => onUpdateSource(i, e.target.value)}
                     aria-label={`Source text for segment ${i + 1}`}
                     title="Correct the transcript — the gloss regenerates from it"

@@ -4,7 +4,7 @@
  * `lib/avatar/pose-solver` works in an anatomical space of its own — hand
  * targets in metres against a ~1.72 m body with shoulders at y=1.328 and a
  * 0.56 m arm reach. NEXA is a different build (shoulders at y=1.250, reach
- * 0.43 m), so targets are rescaled about the shoulder before being solved.
+ * 0.43 m), so targets are mapped onto its body landmarks before being solved.
  *
  * NEXA's bind pose makes the maths simple: a T-pose where every local rest
  * rotation is identity, so each bone's world rotation in bind is identity too
@@ -14,18 +14,17 @@
  */
 
 import * as THREE from "three";
-import { AvatarPose } from "@/lib/avatar/pose-solver";
+import { AvatarPose } from "../../../lib/avatar/pose-solver";
+import { solveArmIK } from "../../../lib/avatar/arm-ik";
 
 /* ---------------------------------------------------------------- *
  * Skeleton
  * ---------------------------------------------------------------- */
 
-const FINGERS = ["Thumb", "Index", "Middle", "Ring", "Little"] as const;
-
 /** Solver order is [thumb, index, middle, ring, pinky]. */
-const CURL_ORDER: readonly (typeof FINGERS)[number][] = [
+const CURL_ORDER = [
   "Thumb", "Index", "Middle", "Ring", "Little",
-];
+] as const;
 
 export interface NexaArm {
   shoulder: THREE.Bone;
@@ -120,9 +119,6 @@ export function readNexaSkeleton(root: THREE.Object3D): NexaSkeleton {
  * Aiming
  * ---------------------------------------------------------------- */
 
-const _v1 = new THREE.Vector3();
-const _v2 = new THREE.Vector3();
-const _axis = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _parentQ = new THREE.Quaternion();
 const _restDir = new THREE.Vector3();
@@ -149,39 +145,6 @@ function aimBone(bone: THREE.Bone, dir: THREE.Vector3, sideSign: number) {
   bone.updateMatrixWorld(true);
 }
 
-/** Two-bone IK: where does the elbow go for this hand target? */
-function solveElbow(
-  shoulder: THREE.Vector3,
-  target: THREE.Vector3,
-  l1: number,
-  l2: number,
-  poleSign: number,
-  out: THREE.Vector3,
-) {
-  _v1.subVectors(target, shoulder);
-  let dist = _v1.length();
-  const max = (l1 + l2) * 0.999;
-  if (dist > max) {
-    _v1.multiplyScalar(max / dist);
-    target.copy(shoulder).add(_v1);
-    dist = max;
-  }
-  dist = Math.max(dist, 1e-4);
-
-  const cos = Math.min(1, Math.max(-1, (l1 * l1 + dist * dist - l2 * l2) / (2 * l1 * dist)));
-  const alpha = Math.acos(cos);
-
-  _v1.normalize();
-  // Elbows drop and tuck slightly behind the torso.
-  _v2.set(poleSign * 0.22, -1, -0.5).normalize();
-  _axis.crossVectors(_v1, _v2);
-  if (_axis.lengthSq() < 1e-6) _axis.set(0, 0, poleSign);
-  _axis.normalize();
-
-  _q.setFromAxisAngle(_axis, -alpha);
-  out.copy(_v1).applyQuaternion(_q).multiplyScalar(l1).add(shoulder);
-}
-
 /* ---------------------------------------------------------------- *
  * Pose application
  * ---------------------------------------------------------------- */
@@ -205,6 +168,12 @@ const Y_OFFSET = -0.10;
 const _target = new THREE.Vector3();
 const _elbow = new THREE.Vector3();
 const _dir = new THREE.Vector3();
+const _shoulder = new THREE.Vector3();
+const _rootQ = new THREE.Quaternion();
+const _wristQ = new THREE.Quaternion();
+const _bindQ = new THREE.Quaternion();
+const _wristEuler = new THREE.Euler();
+const Z_AXIS = new THREE.Vector3(0, 0, 1);
 
 /** Maps a solver-space hand target into NEXA space. */
 function retarget(posX: number, posY: number, posZ: number, out: THREE.Vector3) {
@@ -212,6 +181,7 @@ function retarget(posX: number, posY: number, posZ: number, out: THREE.Vector3) 
 }
 
 function applyArm(
+  root: THREE.Object3D,
   arm: NexaArm,
   hand: AvatarPose["right"],
   /** +1 for NEXA's Left bones (+X), -1 for Right. */
@@ -219,25 +189,34 @@ function applyArm(
 ) {
   retarget(hand.pos.x, hand.pos.y, hand.pos.z, _target);
 
-  solveElbow(
-    arm.shoulderRest,
-    _target,
-    arm.upperLength,
-    arm.lowerLength,
-    boneSign,
-    _elbow,
-  );
+  // Solve in model space, then aim in world space. Orbiting the model or
+  // breathing through the chest must carry the whole arm with the body.
+  arm.upper.getWorldPosition(_shoulder);
+  root.worldToLocal(_shoulder);
+  const solved = solveArmIK(_shoulder, _target, arm.upperLength, arm.lowerLength, boneSign);
+  _target.set(solved.target.x, solved.target.y, solved.target.z);
+  _elbow.set(solved.elbow.x, solved.elbow.y, solved.elbow.z);
+  root.localToWorld(_target);
+  root.localToWorld(_elbow);
+  root.localToWorld(_shoulder);
 
-  _dir.subVectors(_elbow, arm.shoulderRest).normalize();
+  _dir.subVectors(_elbow, _shoulder).normalize();
   aimBone(arm.upper, _dir, boneSign);
-
   _dir.subVectors(_target, _elbow).normalize();
   aimBone(arm.lower, _dir, boneSign);
 
-  // Wrist: the solver gives an orientation, applied as a local twist.
-  arm.hand.rotation.set(hand.rot.x * 0.6, hand.rot.y * 0.5, hand.rot.z * 0.6);
+  // The notation defines the hand in model space, independently of elbow
+  // bend. Mirror the solver's X axis, then rotate NEXA's bind ±X fingers to
+  // the canonical +Y finger axis. Compensate the forearm parent rotation.
+  root.getWorldQuaternion(_rootQ);
+  _wristEuler.set(hand.rot.x, -hand.rot.y, -hand.rot.z);
+  _wristQ.setFromEuler(_wristEuler);
+  _bindQ.setFromAxisAngle(Z_AXIS, boneSign * Math.PI / 2);
+  _wristQ.premultiply(_rootQ).multiply(_bindQ);
+  arm.lower.getWorldQuaternion(_parentQ);
+  arm.hand.quaternion.copy(_parentQ.invert()).multiply(_wristQ);
 
-  applyFingers(arm, hand.curl, boneSign);
+  applyFingers(arm, hand.curl, hand.spread, boneSign);
 }
 
 /**
@@ -255,7 +234,7 @@ const THUMB_SCALE = 0.68;
 /** Index, middle, ring, little — applied to the knuckle only. */
 const SPREAD = [0.11, 0.025, -0.035, -0.13];
 
-function applyFingers(arm: NexaArm, curl: readonly number[], boneSign: number) {
+function applyFingers(arm: NexaArm, curl: readonly number[], spread: number, boneSign: number) {
   const s = boneSign; // +1 for the Left (+X) hand
   arm.fingers.forEach((joints, i) => {
     const isThumb = i === 0;
@@ -265,7 +244,7 @@ function applyFingers(arm: NexaArm, curl: readonly number[], boneSign: number) {
       const angle = c * JOINT_ANGLE[j] * (isThumb ? THUMB_SCALE : 1);
       if (j === 0 && !isThumb) {
         // Knuckle also carries the spread, which closes as the finger curls.
-        joint.rotation.set(0, -s * angle, s * SPREAD[i - 1] * (1 - c));
+        joint.rotation.set(0, -s * angle, s * SPREAD[i - 1] * Math.max(0, Math.min(1, spread)) * 2 * (1 - c));
       } else {
         joint.rotation.set(0, -s * angle, 0);
       }
@@ -316,10 +295,15 @@ function applyFace(skel: NexaSkeleton, pose: AvatarPose, blink: number) {
 }
 
 /** Drives the whole rig for one solved pose. */
-export function applyNexaPose(skel: NexaSkeleton, pose: AvatarPose, blink: number) {
+export function applyNexaPose(skel: NexaSkeleton, pose: AvatarPose, blink: number, breath = 0) {
+  if (skel.chest) {
+    skel.chest.rotation.x = breath;
+    skel.chest.rotation.y = (pose.right.pos.z - pose.left.pos.z) * 0.045;
+  }
+  skel.root.updateMatrixWorld(true);
   // Solver "right" is the dominant hand, which is NEXA's -X (Right) side.
-  applyArm(skel.right, pose.right, -1);
-  applyArm(skel.left, pose.left, 1);
+  applyArm(skel.root, skel.right, pose.right, -1);
+  applyArm(skel.root, skel.left, pose.left, 1);
 
   if (skel.head) {
     skel.head.rotation.set(

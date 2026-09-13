@@ -196,13 +196,13 @@ export const DEFAULT_SIGN_LANGUAGE: SignLanguageCode = "ASL";
 /** Languages we ship a real dictionary + motion data for. */
 export const PRODUCTION_READY: SignLanguageCode[] = ["ASL", "ISL"];
 
-export function getProfile(code?: string | null): SignLanguageProfile {
-  const key = (code || "").toUpperCase() as SignLanguageCode;
+export function getProfile(code?: unknown): SignLanguageProfile {
+  const key = (typeof code === "string" ? code : "").toUpperCase() as SignLanguageCode;
   return SIGN_LANGUAGES[key] ?? SIGN_LANGUAGES[DEFAULT_SIGN_LANGUAGE];
 }
 
-export function isSupported(code?: string | null): code is SignLanguageCode {
-  return !!code && (code.toUpperCase() as SignLanguageCode) in SIGN_LANGUAGES;
+export function isSupported(code?: unknown): code is SignLanguageCode {
+  return typeof code === "string" && Object.prototype.hasOwnProperty.call(SIGN_LANGUAGES, code.toUpperCase());
 }
 
 /** Builds the system prompt for the LLM glosser for a given target language. */

@@ -38,13 +38,13 @@ export default function HeroSection({ onTryFree }: { onTryFree?: () => void }) {
             <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
           </span>
           <span className="font-label-eyebrow text-label-eyebrow text-primary uppercase tracking-[0.14em]">
-            Speech to Sign, Instantly
+            English speech to ASL
           </span>
         </motion.div>
 
         {/* Headline */}
         <motion.div variants={itemVariants}>
-          <h1 className="text-[3.5rem] md:text-[4.5rem] lg:text-[5.5rem] font-extrabold text-on-surface tracking-tight max-w-4xl mx-auto leading-[1.08] mb-space-md">
+          <h1 className="text-[2.5rem] sm:text-[3.5rem] md:text-[4.5rem] lg:text-[5.5rem] font-extrabold text-on-surface tracking-tight max-w-4xl mx-auto leading-[1.08] mb-space-md">
             Accessible Video, Powered by{" "}
             <span className="bg-gradient-to-r from-primary via-tertiary to-secondary bg-clip-text text-transparent drop-shadow-sm">
               AI Sign Translation
@@ -55,9 +55,8 @@ export default function HeroSection({ onTryFree }: { onTryFree?: () => void }) {
         {/* Subtitle */}
         <motion.div variants={itemVariants}>
           <p className="font-body-lg text-body-lg text-on-surface-variant max-w-2xl mx-auto mb-space-lg leading-relaxed font-medium">
-            Transform any spoken audio, recorded video, or live conferencing call into
-            real-time, expressive 3D American Sign Language (ASL) avatars via an
-            ultra-low-latency LLM semantic glossing and skeletal kinetics pipeline.
+            Turn English speech and captions into an ASL signing plan with a 3D avatar.
+            Import media, review the translation at your pace, or share audio from a live meeting tab.
           </p>
         </motion.div>
 
@@ -78,7 +77,7 @@ export default function HeroSection({ onTryFree }: { onTryFree?: () => void }) {
               className="inline-flex items-center gap-space-xs px-space-lg py-space-sm rounded-full bg-surface-container/80 hover:bg-surface-container-high text-on-surface font-label-button text-label-button backdrop-blur-md shadow-sm hover:text-primary transition-all duration-200 border border-outline-variant/30"
             >
               <span className="material-symbols-outlined text-primary text-[20px]">play_circle</span>
-              <span>Watch Demo (2 min)</span>
+              <span>Watch Demo</span>
             </Link>
           </motion.div>
         </motion.div>

@@ -1,0 +1,7 @@
+logs/
+extension/
+tests/
+docs/
+playwright.config.ts
+tsconfig.tsbuildinfo
+vendor/youtube/

@@ -2,8 +2,6 @@
 
 const sections = [
   { id: "profile", label: "Profile", icon: "person" },
-  { id: "avatar", label: "Avatar", icon: "view_in_ar" },
-  { id: "engine", label: "Neural Engine", icon: "psychology" },
   { id: "apikeys", label: "API Keys", icon: "key" },
 ];
 
@@ -14,10 +12,11 @@ interface SettingsNavProps {
 
 export default function SettingsNav({ active, onSelect }: SettingsNavProps) {
   return (
-    <nav className="flex flex-col gap-1 w-48 flex-shrink-0">
+    <nav aria-label="Settings sections" className="flex flex-row flex-wrap md:flex-col gap-1 w-full md:w-48 flex-shrink-0">
       {sections.map(({ id, label, icon }) => (
         <button
           key={id}
+          aria-current={active === id ? "page" : undefined}
           onClick={() => onSelect(id)}
           className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium text-left transition-all duration-150 ${
             active === id

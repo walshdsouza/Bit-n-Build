@@ -19,6 +19,7 @@ import {
   SignPlanItem,
   SignMovement,
 } from "../types";
+import { blendRotation, frameRotation } from "./rotation";
 
 export interface Vec3 {
   x: number;
@@ -138,6 +139,12 @@ const MOVEMENT_AMPLITUDE: Record<string, number> = {
   large: 0.18,
 };
 
+/** Smooth acceleration and deceleration without overshooting a sign target. */
+export function easeMotion(value: number): number {
+  const t = Math.max(0, Math.min(1, value));
+  return t * t * t * (10 + t * (-15 + 6 * t));
+}
+
 /* ---------------------------------------------------------------- *
  * Solver
  * ---------------------------------------------------------------- */
@@ -147,31 +154,31 @@ function mirrorX(p: Vec3): Vec3 {
 }
 
 /** Converts extended-finger direction + palm orientation into wrist Euler angles. */
-function wristRotation(h: HandConfig, mirror: boolean): Vec3 {
-  const d = DIR_VECTORS[h.extFingerDir];
-  const p = DIR_VECTORS[h.palmOr as ExtFingerDir] ?? DIR_VECTORS.o;
-
-  // Pitch: angle in the YZ plane from +Y to d.
-  // atan2(d.z, d.y) correctly gives:
-  //   dir:u  (0, 1, 0)  → 0        (no rotation, fingers stay up)
-  //   dir:o  (0, 0, 1)  → +π/2    (tilt fingers toward viewer)
-  //   dir:d  (0,-1, 0)  → ±π      (fingers point down)
-  //   dir:i  (0, 0,-1)  → -π/2    (tilt fingers away from viewer)
-  // The old formula (asin(d.y) - π/2) had the wrong sign for all non-vertical directions.
-  const pitch = Math.atan2(d.z, d.y);
-
-  // Yaw: horizontal azimuth of d in the XZ plane.
-  const yaw = Math.atan2(d.x, d.z);
-
-  // Roll: palm facing direction around the finger axis.
-  // atan2(-p.x, p.z) maps:
-  //   palm:o  (0, 0, 1)  → 0      (palm toward viewer — default, no roll)
-  //   palm:i  (0, 0,-1)  → ±π    (palm away from viewer)
-  //   palm:l  (-1,0, 0)  → +π/2  (palm faces signer's left)
-  //   palm:r  (1, 0, 0)  → -π/2  (palm faces signer's right)
-  const roll = Math.atan2(-p.x, p.z);
-
-  return v(pitch, mirror ? -yaw : yaw, mirror ? -roll : roll);
+function wristRotation(h: HandConfig, mirror: boolean, twist = 0): Vec3 {
+  const direction = DIR_VECTORS[h.extFingerDir] ?? DIR_VECTORS.u;
+  const length = Math.hypot(direction.x, direction.y, direction.z);
+  const y = v((mirror ? -direction.x : direction.x) / length, direction.y / length, direction.z / length);
+  const palm = DIR_VECTORS[h.palmOr as ExtFingerDir] ?? DIR_VECTORS.o;
+  let z = v(mirror ? -palm.x : palm.x, palm.y, palm.z);
+  let dot = y.x * z.x + y.y * z.y + y.z * z.z;
+  z = v(z.x - y.x * dot, z.y - y.y * dot, z.z - y.z * dot);
+  if (Math.hypot(z.x, z.y, z.z) < 1e-6) {
+    // Some coarse dictionary entries specify parallel palm/finger vectors.
+    // Preserve finger direction and use a stable perpendicular palm normal.
+    z = Math.abs(y.z) > 0.8 ? v(0, -1, 0) : v(0, 0, 1);
+    dot = y.x * z.x + y.y * z.y + y.z * z.z;
+    z = v(z.x - y.x * dot, z.y - y.y * dot, z.z - y.z * dot);
+  }
+  const normalLength = Math.hypot(z.x, z.y, z.z);
+  z = v(z.x / normalLength, z.y / normalLength, z.z / normalLength);
+  const x = v(y.y * z.z - y.z * z.y, y.z * z.x - y.x * z.z, y.x * z.y - y.y * z.x);
+  const angle = mirror ? -twist : twist;
+  const c = Math.cos(angle), s = Math.sin(angle);
+  return frameRotation(
+    v(x.x * c - z.x * s, x.y * c - z.y * s, x.z * c - z.z * s),
+    y,
+    v(z.x * c + x.x * s, z.y * c + x.y * s, z.z * c + x.z * s),
+  );
 }
 
 /**
@@ -181,13 +188,14 @@ function wristRotation(h: HandConfig, mirror: boolean): Vec3 {
 function movementOffset(m: SignMovement, t: number): Vec3 {
   const amp = MOVEMENT_AMPLITUDE[m.size ?? "medium"] ?? 0.1;
   const reps = Math.max(m.repetitions ?? 1, 1);
-  const phase = t * reps;
+  const phase = easeMotion(t) * reps;
   const dir = m.direction ? DIR_VECTORS[m.direction] : DIR_VECTORS.o;
 
   switch (m.type) {
     case "straight": {
-      // Ease out along the movement direction.
-      const k = Math.sin(Math.min(phase, 1) * Math.PI * 0.5) * amp;
+      // Repeated strokes must return between contacts; a single stroke ends
+      // at its target. Previously repetitions were silently clamped away.
+      const k = (reps === 1 ? easeMotion(t) : (1 - Math.cos(phase * Math.PI * 2)) * 0.5) * amp;
       return v(dir.x * k, dir.y * k, dir.z * k);
     }
     case "curved": {
@@ -210,15 +218,15 @@ function movementOffset(m: SignMovement, t: number): Vec3 {
     }
     case "tap":
     case "contact": {
-      // Quick in-and-out contact pulses.
-      const pulse = Math.abs(Math.sin(phase * Math.PI));
+      // Zero velocity at contact and release avoids the cusp in abs(sin()).
+      const pulse = Math.sin(phase * Math.PI) ** 2;
       return v(0, 0, -pulse * amp * 0.6);
     }
     case "twist": {
       return v(0, 0, 0); // expressed as roll below
     }
     case "nod": {
-      return v(0, -Math.abs(Math.sin(phase * Math.PI)) * amp * 0.6, 0);
+      return v(0, -(Math.sin(phase * Math.PI) ** 2) * amp * 0.6, 0);
     }
     default:
       return v(0, 0, 0);
@@ -228,7 +236,7 @@ function movementOffset(m: SignMovement, t: number): Vec3 {
 function twistRoll(m: SignMovement, t: number): number {
   if (m.type !== "twist") return 0;
   const reps = Math.max(m.repetitions ?? 1, 1);
-  return Math.sin(t * reps * Math.PI * 2) * 0.9;
+  return Math.sin(easeMotion(t) * reps * Math.PI * 2) * 0.9;
 }
 
 /** Non-manual marker → face pose. */
@@ -270,7 +278,7 @@ export function solveFace(nmm: string | undefined, intensity = 0.7, t = 0): Face
  */
 const REST_RIGHT: HandPose = {
   pos: v(0.20, 1.04, 0.26),
-  rot: v(-0.30, 0.10, 0.10),
+  rot: v(2.15, 0.10, 0.20),
   curl: [0.25, 0.22, 0.22, 0.22, 0.22],
   spread: 0.18,
   visible: true,
@@ -279,13 +287,13 @@ const REST_RIGHT: HandPose = {
 const REST_LEFT: HandPose = {
   ...REST_RIGHT,
   pos: v(-0.20, 1.04, 0.26),
-  rot: v(-0.30, -0.10, -0.10),
+  rot: v(2.15, -0.10, -0.20),
 };
 
 export function restPose(): AvatarPose {
   return {
-    right: { ...REST_RIGHT, pos: { ...REST_RIGHT.pos }, rot: { ...REST_RIGHT.rot } },
-    left: { ...REST_LEFT, pos: { ...REST_LEFT.pos }, rot: { ...REST_LEFT.rot } },
+    right: { ...REST_RIGHT, pos: { ...REST_RIGHT.pos }, rot: { ...REST_RIGHT.rot }, curl: [...REST_RIGHT.curl] },
+    left: { ...REST_LEFT, pos: { ...REST_LEFT.pos }, rot: { ...REST_LEFT.rot }, curl: [...REST_LEFT.curl] },
     face: solveFace("neutral"),
   };
 }
@@ -294,13 +302,12 @@ function solveHand(h: HandConfig, m: SignMovement, t: number, mirror: boolean): 
   const anchor = LOCATION_POINTS[h.location] ?? LOCATION_POINTS.neutral_space;
   const base = mirror ? mirrorX(anchor) : anchor;
   const off = movementOffset(m, t);
-  const rot = wristRotation(h, mirror);
-  rot.z += twistRoll(m, t);
+  const rot = wristRotation(h, mirror, twistRoll(m, t));
 
   return {
     pos: v(base.x + (mirror ? -off.x : off.x), base.y + off.y, base.z + off.z),
     rot,
-    curl: SHAPE_CURLS[h.shape] ?? SHAPE_CURLS.flat,
+    curl: [...(SHAPE_CURLS[h.shape] ?? SHAPE_CURLS.flat)],
     spread: SHAPE_SPREAD[h.shape] ?? 0.25,
     visible: true,
   };
@@ -316,10 +323,10 @@ function solveHand(h: HandConfig, m: SignMovement, t: number, mirror: boolean): 
  */
 export function solvePose(item: SignPlanItem | null, t: number): AvatarPose {
   if (!item?.entry) return restPose();
+  t = Number.isFinite(t) ? Math.max(0, Math.min(1, t)) : 0;
 
   const entry = item.entry;
-  // Prosody emphasis slightly enlarges the sign — scale uniformly so the hand
-  // stays on the correct body location rather than drifting laterally.
+  // Prosody emphasis slightly enlarges depth while preserving body landmarks.
   const emphasis = 0.90 + item.emphasis * 0.20;
   const right = solveHand(entry.dominant, entry.movement, t, false);
 
@@ -333,8 +340,9 @@ export function solvePose(item: SignPlanItem | null, t: number): AvatarPose {
   } else if (entry.twoHanded) {
     left = solveHand(entry.dominant, entry.movement, t, true);
   } else {
-    left = { ...REST_LEFT, pos: { ...REST_LEFT.pos }, rot: { ...REST_LEFT.rot } };
+    left = { ...REST_LEFT, pos: { ...REST_LEFT.pos }, rot: { ...REST_LEFT.rot }, curl: [...REST_LEFT.curl] };
   }
+  if (entry.twoHanded) left.pos.z *= emphasis;
 
   const nmm = item.nmm[0];
   const face = solveFace(nmm?.emotion, nmm?.intensity ?? 0.7, t);
@@ -342,15 +350,16 @@ export function solvePose(item: SignPlanItem | null, t: number): AvatarPose {
   return { right, left, face };
 }
 
-/** Linear interpolation between poses — used to blend sign transitions. */
+/** Blend targets and finger shapes, with shortest-arc quaternion wrist motion. */
 export function lerpPose(a: AvatarPose, b: AvatarPose, k: number): AvatarPose {
+  k = Math.max(0, Math.min(1, k));
   const lv = (x: Vec3, y: Vec3): Vec3 =>
     v(x.x + (y.x - x.x) * k, x.y + (y.y - x.y) * k, x.z + (y.z - x.z) * k);
   const ln = (x: number, y: number) => x + (y - x) * k;
 
   const lh = (x: HandPose, y: HandPose): HandPose => ({
     pos: lv(x.pos, y.pos),
-    rot: lv(x.rot, y.rot),
+    rot: blendRotation(x.rot, y.rot, k),
     curl: x.curl.map((c, i) => ln(c, y.curl[i])) as HandPose["curl"],
     spread: ln(x.spread, y.spread),
     visible: k < 0.5 ? x.visible : y.visible,

@@ -1,64 +1,61 @@
 "use client";
-import { useState } from "react";
+
+import { useEffect, useState } from "react";
+import { createClient } from "@/utils/supabase/client";
+import { isSupabaseConfigured } from "@/utils/supabase/config";
+
+interface AccountProfile {
+  name: string;
+  email: string;
+}
 
 export default function ProfileSection() {
-  const [name, setName] = useState("Sarah Chen");
-  const [email] = useState("sarah.chen@example.com");
-  const [role, setRole] = useState("Accessibility Researcher");
+  const configured = isSupabaseConfigured();
+  const [profile, setProfile] = useState<AccountProfile | null>(null);
+  const [loaded, setLoaded] = useState(!configured);
+  const [unavailable, setUnavailable] = useState(false);
+
+  useEffect(() => {
+    if (!configured) return;
+    let cancelled = false;
+    async function loadProfile() {
+      try {
+        const { data, error } = await createClient().auth.getUser();
+        if (error) throw error;
+        if (!cancelled && data.user) {
+          const name: unknown = data.user.user_metadata.full_name;
+          setProfile({ name: typeof name === "string" ? name : "Signed-in user", email: data.user.email ?? "" });
+        }
+      } catch {
+        if (!cancelled) setUnavailable(true);
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
+    }
+    void loadProfile();
+    return () => { cancelled = true; };
+  }, [configured]);
 
   return (
     <section id="profile" className="space-y-6">
       <div>
         <h2 className="font-headline-sm text-headline-sm text-on-surface mb-1">Profile</h2>
-        <p className="text-sm text-on-surface-variant">Manage your personal information and preferences.</p>
+        <p className="text-sm text-on-surface-variant">Your account on this deployment.</p>
       </div>
-
-      {/* Avatar + name */}
-      <div className="flex items-center gap-5">
-        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-tertiary to-secondary-container flex items-center justify-center text-on-tertiary text-2xl font-bold shadow-[0_0_20px_rgba(76,215,246,0.2)]">
-          SC
+      {!loaded ? <p role="status" className="text-sm text-on-surface-variant">Loading account…</p> : profile ? (
+        <dl className="space-y-4 rounded-xl border border-outline-variant/40 bg-surface-container-low p-4">
+          <div><dt className="text-xs text-on-surface-variant">Name</dt><dd className="mt-1 text-sm text-on-surface">{profile.name}</dd></div>
+          <div><dt className="text-xs text-on-surface-variant">Email</dt><dd className="mt-1 break-all text-sm text-on-surface">{profile.email || "Not provided"}</dd></div>
+        </dl>
+      ) : (
+        <div className="rounded-xl border border-outline-variant/40 bg-surface-container-low p-4">
+          <p className="font-semibold text-on-surface">Guest mode</p>
+          <p className="mt-2 text-sm leading-relaxed text-on-surface-variant">
+            {!configured ? "Accounts and saved projects are not configured on this deployment. The demo and translation tools remain available." : unavailable ? "The account service could not be reached. Try again later." : "You are not signed in. You can continue using the demo and translation tools."}
+          </p>
         </div>
-        <div>
-          <p className="text-on-surface font-semibold">{name}</p>
-          <p className="text-sm text-on-surface-variant">{email}</p>
-          <button className="text-xs text-primary hover:text-primary/80 mt-1 transition-colors">Change photo</button>
-        </div>
-      </div>
-
-      {/* Form */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-on-surface-variant">Full Name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="bg-surface-container-lowest text-on-surface text-sm rounded-lg px-3 py-2.5 border border-outline-variant/50 focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/20 transition-all"
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-medium text-on-surface-variant">Role</label>
-          <input
-            type="text"
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            className="bg-surface-container-lowest text-on-surface text-sm rounded-lg px-3 py-2.5 border border-outline-variant/50 focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/20 transition-all"
-          />
-        </div>
-        <div className="flex flex-col gap-1.5 sm:col-span-2">
-          <label className="text-xs font-medium text-on-surface-variant">Email (read-only)</label>
-          <input
-            type="email"
-            value={email}
-            readOnly
-            className="bg-surface-container text-on-surface-variant text-sm rounded-lg px-3 py-2.5 border border-outline-variant/30 cursor-not-allowed"
-          />
-        </div>
-      </div>
-
-      <button className="px-5 py-2 rounded-full bg-gradient-to-r from-secondary-container to-primary-container text-on-primary text-sm font-semibold shadow-lg shadow-primary/20 hover:shadow-primary/35 hover:scale-[1.01] transition-all">
-        Save Changes
-      </button>
+      )}
+      <p className="text-sm leading-relaxed text-on-surface-variant">Provider keys are managed in API Keys. They are saved on this device and do not require an account.</p>
     </section>
   );
 }

@@ -1,178 +1,172 @@
 /**
- * YouTube audio fallback.
+ * Public YouTube audio ingestion using a pinned standalone downloader.
  *
- * The primary YouTube path reads existing captions via youtube-transcript-api,
- * which is fast and free but only works when the uploader published captions
- * (or YouTube auto-generated them). A large share of videos have neither, and
- * for those the caption path fails outright.
- *
- * This module is the fallback: pull the audio track with yt-dlp and hand it to
- * the same Whisper pipeline that already serves uploaded files.
+ * The build installs the platform binary under vendor/youtube. Its bundled
+ * challenge solver uses this server's Node runtime, so serverless functions
+ * need neither Python, a shell, user cookies nor remote proxy services.
  */
-
 import { execFile } from "child_process";
 import fs from "fs";
 import path from "path";
-import { extractAudioTrack } from "./ffmpeg";
+import { randomUUID } from "crypto";
+import { extractAudioTrack, SilentAudioError } from "./ffmpeg";
+import { cleanupTempFiles } from "./temp-manager";
 
-/** yt-dlp may be a CLI on PATH, or only available as a Python module. */
-const YTDLP_CANDIDATES: { cmd: string; prefix: string[] }[] = [
-  { cmd: "yt-dlp", prefix: [] },
-  { cmd: "python", prefix: ["-m", "yt_dlp"] },
-  { cmd: "py", prefix: ["-m", "yt_dlp"] },
-  { cmd: "python3", prefix: ["-m", "yt_dlp"] },
-];
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 
-function run(cmd: string, args: string[], timeoutMs: number): Promise<string> {
+export class YouTubeAudioError extends Error {
+  constructor(message: string, public readonly status = 502) {
+    super(message);
+    this.name = "YouTubeAudioError";
+  }
+}
+
+function downloaderPath(): string {
+  const platform = `${process.platform}-${process.arch}`;
+  const filename = process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp_linux";
+  const executable = path.join(process.cwd(), "vendor", "youtube", platform, filename);
+  if (!fs.existsSync(executable)) {
+    throw new YouTubeAudioError("YouTube audio processing is temporarily unavailable on this server. Please retry shortly.", 503);
+  }
+  return executable;
+}
+
+function safeDownloadError(error: unknown): YouTubeAudioError {
+  if (error instanceof YouTubeAudioError) return error;
+  if (error instanceof SilentAudioError) return new YouTubeAudioError(error.message, 422);
+  const raw = error instanceof Error ? error.message.toLowerCase() : "";
+  if (/\bprivate video\b|\bvideo is private\b|\bmembers-only\b/.test(raw)) {
+    return new YouTubeAudioError("This YouTube video is private or members-only. Choose a public video.", 422);
+  }
+  if (raw.includes("age") && raw.includes("restrict")) {
+    return new YouTubeAudioError("This YouTube video requires age verification. Choose a public video that does not require sign-in.", 422);
+  }
+  if (raw.includes("unavailable") || raw.includes("removed") || raw.includes("not available")) {
+    return new YouTubeAudioError("This YouTube video is unavailable from our server. Check that it is public and available in your region.", 422);
+  }
+  if (raw.includes("max-filesize") || raw.includes("larger than max") || raw.includes("file is larger")) {
+    return new YouTubeAudioError("This video's audio exceeds the 25 MB processing limit. Choose a shorter video.", 413);
+  }
+  if (raw.includes("403") || raw.includes("429") || raw.includes("sign in") || raw.includes("bot")) {
+    return new YouTubeAudioError("YouTube temporarily refused this video's audio. Please retry, or upload the recording directly.", 502);
+  }
+  // Never reflect command lines, signed media URLs, or subprocess diagnostics.
+  return new YouTubeAudioError("This video's audio could not be downloaded. Please retry or choose another public video.", 502);
+}
+
+function runDownloader(
+  executable: string,
+  args: string[],
+  timeoutMs: number,
+  outputPath?: string,
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(
-      cmd,
-      args,
-      { encoding: "utf8", shell: true, timeout: timeoutMs, maxBuffer: 1024 * 1024 * 16 },
-      (error, stdout, stderr) => {
-        if (error) reject(new Error(stderr?.trim() || error.message));
-        else resolve(stdout);
-      },
-    );
+    let exceededSize = false;
+    let settled = false;
+    const child = execFile(executable, args, {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: timeoutMs,
+      maxBuffer: 8 * 1024 * 1024,
+    }, (error, stdout, stderr) => {
+      settled = true;
+      if (watcher) clearInterval(watcher);
+      if (exceededSize) {
+        reject(new YouTubeAudioError("This video's audio exceeds the 25 MB processing limit. Choose a shorter video.", 413));
+      } else if (error?.killed) {
+        reject(new YouTubeAudioError("YouTube audio processing took too long. Please retry or choose a shorter video.", 504));
+      } else if (error) {
+        reject(safeDownloadError(new Error(stderr || error.message)));
+      } else {
+        resolve(stdout);
+      }
+    });
+    // --max-filesize rejects known large downloads; this also bounds formats
+    // whose server omits a content length. The final size is verified below.
+    const watcher = outputPath ? setInterval(() => {
+      void fs.promises.stat(outputPath).then((stat) => {
+        if (!settled && stat.size > MAX_AUDIO_BYTES) {
+          exceededSize = true;
+          child.kill();
+        }
+      }).catch(() => { /* The downloader may not have created the file yet. */ });
+    }, 250) : undefined;
+    watcher?.unref();
   });
 }
 
-/**
- * Turns yt-dlp's raw stderr into something a developer can act on.
- *
- * The common one is a bare "HTTP Error 403". YouTube now gates media URLs
- * behind a JavaScript challenge, and yt-dlp needs a JS runtime to solve it —
- * without one, extraction still reports the formats but every download 403s.
- * That is impossible to guess from the status code alone.
- */
-function explainDownloadFailure(e: unknown): string {
-  const raw = e instanceof Error ? e.message : String(e);
-  const lower = raw.toLowerCase();
-
-  if (lower.includes("403") || lower.includes("javascript runtime") || lower.includes("nsig")) {
-    return (
-      "YouTube refused the audio download (HTTP 403). yt-dlp needs a JavaScript " +
-      "runtime to solve YouTube's challenge — install Deno (https://deno.com) and/or " +
-      'update yt-dlp with "pip install -U yt-dlp", then retry. ' +
-      `Original error: ${raw}`
-    );
-  }
-  if (lower.includes("age") && lower.includes("restrict")) {
-    return `This video is age-restricted, so its audio cannot be downloaded without sign-in. Original error: ${raw}`;
-  }
-  if (lower.includes("private") || lower.includes("members-only")) {
-    return `This video is private or members-only. Original error: ${raw}`;
-  }
-  if (lower.includes("unavailable")) {
-    return `This video is unavailable. Original error: ${raw}`;
-  }
-  return `Failed to download this video's audio. ${raw}`;
-}
-
 export interface YouTubeAudioResult {
-  /** Path to a Whisper-ready mono 16kHz mp3. */
   audioPath: string;
-  /** Every temp file produced, for the caller to clean up. */
   tempFiles: string[];
   title?: string;
   duration?: number;
 }
 
-/**
- * Downloads a video's audio and transcodes it for Whisper.
- *
- * `maxDurationSec` guards against someone pasting a three-hour stream and
- * blocking the request; yt-dlp is asked for metadata first so we can refuse
- * before spending the download.
- */
+/** Download real audio, validate its limits, then prepare it for Whisper. */
 export async function downloadYouTubeAudio(
   videoId: string,
   tempDir: string,
   opts: { maxDurationSec?: number } = {},
 ): Promise<YouTubeAudioResult> {
+  if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+    throw new YouTubeAudioError("Invalid YouTube video ID.", 400);
+  }
   const maxDuration = opts.maxDurationSec ?? 45 * 60;
+  if (!Number.isFinite(maxDuration) || maxDuration <= 0) {
+    throw new YouTubeAudioError("Invalid video duration limit.", 400);
+  }
+  const executable = downloaderPath();
   const url = `https://www.youtube.com/watch?v=${videoId}`;
-  const uid = `yt_${videoId}_${Date.now()}`;
+  const uid = `yt_${videoId}_${randomUUID()}`;
   const rawPath = path.join(tempDir, `${uid}.audio`);
   const mp3Path = path.join(tempDir, `${uid}.mp3`);
-  const tempFiles: string[] = [rawPath, mp3Path];
+  await fs.promises.mkdir(tempDir, { recursive: true });
+  const common = [
+    "--ignore-config", "--no-plugin-dirs", "--no-cache-dir", "--no-update",
+    "--no-warnings", "--no-playlist", "--no-progress",
+    "--no-js-runtimes", "--js-runtimes", `node:${process.execPath}`,
+    "--no-remote-components",
+    "--socket-timeout", "10", "--retries", "1", "--extractor-retries", "1", "--fragment-retries", "1",
+  ];
+  const ownedFiles = async () => (await fs.promises.readdir(tempDir))
+    .filter((name) => name.startsWith(uid + "."))
+    .map((name) => path.join(tempDir, name));
 
-  let runner: { cmd: string; prefix: string[] } | null = null;
-  // Keep the FIRST failure: it comes from the preferred runner and describes
-  // the real problem ("video unavailable", "age restricted"). Later candidates
-  // fail with "Python was not found", which just hides it.
-  let firstError: unknown = null;
-
-  // 1. Metadata first — cheap, and it tells us whether to bother downloading.
-  let title: string | undefined;
-  let duration: number | undefined;
-
-  for (const candidate of YTDLP_CANDIDATES) {
-    try {
-      // Two separate --print flags rather than one with a delimiter: these run
-      // through a shell, where characters like "|" and "(" are metacharacters.
-      // Every format string is quoted for the same reason.
-      const out = await run(
-        candidate.cmd,
-        [
-          ...candidate.prefix,
-          "--no-warnings",
-          "--skip-download",
-          "--print", '"%(title)s"',
-          "--print", '"%(duration)s"',
-          url,
-        ],
-        60_000,
-      );
-      const lines = out.trim().split(/\r?\n/);
-      title = lines[0]?.trim() || undefined;
-      const parsed = Number(lines[1]?.trim());
-      duration = Number.isFinite(parsed) ? parsed : undefined;
-      runner = candidate;
-      break;
-    } catch (e) {
-      if (firstError === null) firstError = e;
-    }
-  }
-
-  if (!runner) {
-    throw new Error(
-      `Could not download this video's audio. ` +
-        `Check the video is public and available, or install yt-dlp with "pip install yt-dlp". (${firstError instanceof Error ? firstError.message : firstError})`,
-    );
-  }
-
-  if (duration && duration > maxDuration) {
-    throw new Error(
-      `This video is ${Math.round(duration / 60)} minutes long and has no captions. ` +
-        `Transcribing it would exceed the ${Math.round(maxDuration / 60)}-minute limit.`,
-    );
-  }
-
-  // 2. Download the smallest usable audio stream.
   try {
-    await run(
-      runner.cmd,
-      [
-        ...runner.prefix,
-        "--no-warnings",
-        "--no-playlist",
-        "-f", "bestaudio/best",
-        "-o", `"${rawPath}"`,
-        url,
-      ],
-      10 * 60_000,
-    );
-  } catch (e) {
-    throw new Error(explainDownloadFailure(e));
+    // Metadata is a separate bounded call so long videos and live streams are
+    // refused before any media download begins.
+    const output = await runDownloader(executable, [...common, "--skip-download", "--dump-single-json", "-f", "bestaudio", url], 30_000);
+    const metadata = JSON.parse(output) as Record<string, unknown>;
+    const duration = typeof metadata.duration === "number" && Number.isFinite(metadata.duration) ? metadata.duration : 0;
+    if (metadata.is_live === true || metadata.live_status === "is_live" || metadata.live_status === "is_upcoming") {
+      throw new YouTubeAudioError("Live and upcoming streams cannot be transcribed yet. Choose a completed recording.", 422);
+    }
+    if (!duration || duration > maxDuration) {
+      throw new YouTubeAudioError(`Choose a completed video under ${Math.round(maxDuration / 60)} minutes long for audio transcription.`, 422);
+    }
+    if (typeof metadata.filesize === "number" && metadata.filesize > MAX_AUDIO_BYTES) {
+      throw new YouTubeAudioError("This video's audio exceeds the 25 MB processing limit. Choose a shorter video.", 413);
+    }
+    await runDownloader(executable, [
+      ...common, "--no-part", "--max-filesize", String(MAX_AUDIO_BYTES),
+      "-f", "bestaudio", "-o", rawPath, url,
+    ], 60_000, rawPath);
+    const downloaded = await fs.promises.stat(rawPath).catch(() => null);
+    if (!downloaded?.size) throw new YouTubeAudioError("YouTube returned no audio for this video. Try another public video.", 422);
+    if (downloaded.size > MAX_AUDIO_BYTES) {
+      throw new YouTubeAudioError("This video's audio exceeds the 25 MB processing limit. Choose a shorter video.", 413);
+    }
+    await extractAudioTrack(rawPath, mp3Path);
+    const prepared = await fs.promises.stat(mp3Path);
+    if (!prepared.size || prepared.size > MAX_AUDIO_BYTES) {
+      throw new YouTubeAudioError("This video's extracted audio exceeds the processing limit. Choose a shorter video.", 413);
+    }
+    return {
+      audioPath: mp3Path, tempFiles: await ownedFiles(),
+      title: typeof metadata.title === "string" ? metadata.title : undefined, duration,
+    };
+  } catch (error) {
+    await cleanupTempFiles(await ownedFiles().catch(() => [rawPath, mp3Path]));
+    throw safeDownloadError(error);
   }
-
-  if (!fs.existsSync(rawPath)) {
-    throw new Error("yt-dlp reported success but produced no audio file.");
-  }
-
-  // 3. Transcode to the mono 16kHz mp3 Whisper expects.
-  await extractAudioTrack(rawPath, mp3Path);
-
-  return { audioPath: mp3Path, tempFiles, title, duration };
 }

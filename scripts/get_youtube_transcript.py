@@ -6,7 +6,8 @@ import codecs
 # Force UTF-8 encoding for stdout on Windows
 sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())
 
-def get_transcript(video_id, languages=['en']):
+def get_transcript(video_id, languages=None):
+    languages = languages or ['en']
     ytt = YouTubeTranscriptApi()
     
     try:
@@ -14,13 +15,23 @@ def get_transcript(video_id, languages=['en']):
         try:
             transcript = transcript_list.find_transcript(languages)
         except Exception:
-            transcript = next(iter(transcript_list))
+            transcript = None
+            for candidate in transcript_list:
+                if not candidate.is_translatable:
+                    continue
+                try:
+                    transcript = candidate.translate(languages[0])
+                    break
+                except Exception:
+                    continue
+            if transcript is None:
+                raise ValueError("No English captions or English caption translation are available.")
         data = transcript.fetch()
-    except Exception as list_error:
+    except Exception:
         try:
             data = ytt.fetch(video_id, languages=languages)
         except Exception as fetch_error:
-            raise Exception(f"Failed to fetch transcript: {str(fetch_error)}. Captions might be disabled.")
+            raise Exception(f"Failed to fetch English captions: {str(fetch_error)}. Captions may be disabled or unavailable in English.")
 
     formatted = []
     for item in data:

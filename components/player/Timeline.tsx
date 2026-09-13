@@ -1,114 +1,54 @@
 "use client";
-import { useState } from "react";
+
 interface TimelineProps {
   playing: boolean;
   onPlayPause: () => void;
   currentTime: number;
   duration: number;
-  onSeek: (t: number) => void;
+  onSeek: (time: number) => void;
+  disabled?: boolean;
+  playbackRate: number;
+  onPlaybackRateChange: (rate: number) => void;
+  onFullscreen: () => void;
 }
 
-function formatTime(s: number): string {
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return `${m}:${sec.toString().padStart(2, "0")}`;
+function formatTime(seconds: number): string {
+  const safe = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+  return `${Math.floor(safe / 60)}:${Math.floor(safe % 60).toString().padStart(2, "0")}`;
 }
 
-export default function Timeline({ playing, onPlayPause, currentTime, duration, onSeek }: TimelineProps) {
-  const [isScrubbing, setIsScrubbing] = useState(false);
-  const [scrubTime, setScrubTime] = useState(0);
-
-  const displayTime = isScrubbing ? scrubTime : currentTime;
-  const progress = duration > 0 ? (displayTime / duration) * 100 : 0;
-  const bufferedPct = Math.min(100, progress + 20);
-
+export default function Timeline({ playing, onPlayPause, currentTime, duration, onSeek, disabled, playbackRate, onPlaybackRateChange, onFullscreen }: TimelineProps) {
+  const buttonClass = "w-10 h-10 flex items-center justify-center text-on-surface-variant hover:text-primary focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40";
   return (
-    <div className="bg-surface-container-lowest border-t border-outline-variant/30 px-6 py-3 flex-shrink-0">
-      {/* Scrubber */}
-      <div className="relative mb-2 flex items-center gap-3">
-        <span className="text-xs font-mono text-outline w-10 text-right shrink-0">
-          {formatTime(displayTime)}
-        </span>
-        <div className="flex-1 relative h-1.5 bg-surface-container rounded-full overflow-hidden cursor-pointer">
-          {/* Buffered */}
-          <div
-            className="absolute inset-y-0 left-0 bg-primary/20 rounded-full transition-all"
-            style={{ width: `${bufferedPct}%` }}
-          />
-          {/* Played */}
-          <div
-            className="absolute inset-y-0 left-0 bg-gradient-to-r from-secondary-container to-primary rounded-full transition-all"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-        <span className="text-xs font-mono text-outline w-10 shrink-0">
-          {duration > 0 ? formatTime(duration) : "0:00"}
-        </span>
-        {/* Draggable thumb */}
-        <input
-          type="range"
-          min={0}
-          max={duration > 0 ? duration : 100}
-          step={0.1}
-          value={displayTime}
-          onPointerDown={() => {
-            setIsScrubbing(true);
-            setScrubTime(currentTime);
-          }}
-          onChange={(e) => {
-            setScrubTime(Number(e.target.value));
-          }}
-          onPointerUp={(e) => {
-            setIsScrubbing(false);
-            onSeek(Number(e.currentTarget.value));
-          }}
-          className="absolute inset-0 w-full opacity-0 cursor-pointer"
-        />
+    <div className="bg-surface-container-lowest border-t border-outline-variant/30 px-3 sm:px-6 py-3 flex-shrink-0">
+      <div className="mb-2 flex items-center gap-3">
+        <output data-testid="playback-time" className="text-xs font-mono text-on-surface-variant w-10 text-right shrink-0">{formatTime(currentTime)}</output>
+        <input aria-label="Playback position" type="range" min={0} max={duration || 0} step={0.1}
+          value={Math.min(currentTime, duration || 0)} disabled={disabled || !duration}
+          onChange={(event) => onSeek(Number(event.target.value))}
+          className="flex-1 min-w-0 h-6 accent-primary cursor-pointer" />
+        <span className="text-xs font-mono text-on-surface-variant w-10 shrink-0">{formatTime(duration)}</span>
       </div>
-
-      {/* Controls */}
-      <div className="flex items-center gap-3">
-        {/* Transport */}
+      <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1">
-          <button
-            onClick={() => onSeek(Math.max(0, currentTime - 5))}
-            className="w-8 h-8 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors"
-          >
-            <span className="material-symbols-outlined text-[20px]">skip_previous</span>
+          <button aria-label="Back 5 seconds" disabled={disabled} onClick={() => onSeek(Math.max(0, currentTime - 5))} className={buttonClass}>
+            <span className="material-symbols-outlined" aria-hidden="true">replay_5</span>
           </button>
-          <button
-            onClick={onPlayPause}
-            className="w-10 h-10 flex items-center justify-center rounded-full bg-primary text-on-primary shadow-[0_0_16px_rgba(76,215,246,0.4)] hover:shadow-[0_0_24px_rgba(76,215,246,0.6)] hover:scale-105 transition-all"
-          >
-            <span className="material-symbols-outlined text-[22px]">{playing ? "pause" : "play_arrow"}</span>
+          <button aria-label={playing ? "Pause" : currentTime >= duration && duration > 0 ? "Replay" : "Play"} disabled={disabled} onClick={onPlayPause}
+            className="w-11 h-11 flex items-center justify-center rounded-full bg-primary text-on-primary shadow-lg disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">
+            <span className="material-symbols-outlined" aria-hidden="true">{playing ? "pause" : "play_arrow"}</span>
           </button>
-          <button
-            onClick={() => onSeek(Math.min(duration, currentTime + 5))}
-            className="w-8 h-8 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors"
-          >
-            <span className="material-symbols-outlined text-[20px]">skip_next</span>
+          <button aria-label="Forward 5 seconds" disabled={disabled} onClick={() => onSeek(Math.min(duration, currentTime + 5))} className={buttonClass}>
+            <span className="material-symbols-outlined" aria-hidden="true">forward_5</span>
           </button>
         </div>
-
-        {/* Speed */}
-        <button className="text-xs text-on-surface-variant hover:text-on-surface px-2 py-1 rounded bg-surface-container transition-colors font-mono">
-          1×
-        </button>
-
-        {/* Volume */}
-        <div className="flex items-center gap-1.5 ml-2">
-          <span className="material-symbols-outlined text-on-surface-variant text-[18px]">volume_up</span>
-          <div className="w-20 relative h-1.5 bg-surface-container rounded-full overflow-hidden">
-            <div className="absolute inset-y-0 left-0 bg-primary/70 rounded-full" style={{ width: "80%" }} />
-          </div>
-        </div>
-
-        {/* Right side */}
-        <div className="ml-auto flex items-center gap-2">
-          <button className="text-xs text-on-surface-variant hover:text-primary px-2 py-1 rounded bg-surface-container transition-colors font-mono">CC</button>
-          <button className="text-xs text-on-surface-variant hover:text-primary px-2 py-1 rounded bg-surface-container transition-colors font-mono">NMM</button>
-          <button className="w-7 h-7 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors">
-            <span className="material-symbols-outlined text-[18px]">fullscreen</span>
+        <select aria-label="Playback speed" value={playbackRate} onChange={(event) => onPlaybackRateChange(Number(event.target.value))}
+          className="h-10 text-xs text-on-surface bg-surface-container px-2 rounded-lg font-mono">
+          {[0.5, 1, 1.5, 2].map((rate) => <option key={rate} value={rate}>{rate}×</option>)}
+        </select>
+        <div className="flex items-center gap-1 ml-auto">
+          <button aria-label="Toggle fullscreen" onClick={onFullscreen} className={buttonClass}>
+            <span className="material-symbols-outlined text-[20px]" aria-hidden="true">fullscreen</span>
           </button>
         </div>
       </div>

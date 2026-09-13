@@ -26,7 +26,7 @@ export async function updateSession(request: NextRequest) {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           supabaseResponse = NextResponse.next({
             request,
           })
@@ -50,19 +50,18 @@ export async function updateSession(request: NextRequest) {
                            request.nextUrl.pathname.startsWith('/player') ||
                            request.nextUrl.pathname.startsWith('/settings');
 
-  if (!user && isProtectedRoute) {
+  // Guest translation and the demo contain no saved account data. Keep them
+  // available when a database is configured; saved project routes stay private.
+  const isGuestRoute = ['/dashboard', '/settings', '/live', '/player/demo', '/player/local'].includes(request.nextUrl.pathname)
+    || /^\/player\/saved-[a-f0-9-]{36}$/.test(request.nextUrl.pathname);
+  if (!user && isProtectedRoute && !isGuestRoute) {
     // no user, redirect to landing page
     const url = request.nextUrl.clone()
     url.pathname = '/'
     return NextResponse.redirect(url)
   }
 
-  // If user is logged in and at root, redirect to dashboard
-  if (user && request.nextUrl.pathname === '/') {
-    const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
-    return NextResponse.redirect(url)
-  }
+  // The public landing page remains the canonical entry point for everyone.
 
   return supabaseResponse
 }

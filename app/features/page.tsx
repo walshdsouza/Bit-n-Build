@@ -1,127 +1,68 @@
-"use client";
-import { motion, Variants } from "framer-motion";
+import Image from "next/image";
+import Link from "next/link";
 import Header from "@/components/marketing/Header";
 import Footer from "@/components/marketing/Footer";
+import dashboardImage from "@/public/features/dashboard.png";
+import playerImage from "@/public/features/player.png";
+import liveImage from "@/public/features/live.png";
 
-const containerVariants: Variants = {
-  hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: { staggerChildren: 0.2, delayChildren: 0.1 },
+const features = [
+  {
+    number: "01", tag: "IMPORT", title: "Start with speech or captions.",
+    description: "Upload a video or audio file, import an accessible YouTube transcript, or capture audio from a browser tab you choose. Review the source before creating your ASL translation.",
+    detail: "YouTube availability depends on the source and provider access. Browser-tab capture gives you another way to import audio that you can play.",
+    href: "/dashboard", action: "Create a translation", image: dashboardImage,
+    alt: "UNMUTE dashboard with media upload, YouTube URL and browser-tab audio capture controls",
+    caption: "The translation dashboard. Choose your source and review it before importing.",
   },
-};
-
-const sectionVariants: Variants = {
-  hidden: { opacity: 0, y: 30 },
-  show: {
-    opacity: 1,
-    y: 0,
-    transition: { type: "spring", stiffness: 70, damping: 20 },
+  {
+    number: "02", tag: "REVIEW & PLAY", title: "Follow every sign at your pace.",
+    description: "Watch the NEXA avatar alongside the source transcript. Pause, scrub the timeline, change playback speed, and inspect or edit the text behind each translated segment.",
+    detail: "The current signing experience targets ASL. The generated signing plan can be exported as SiGML for further review.",
+    href: "/player/demo", action: "Try the working demo", image: playerImage,
+    alt: "UNMUTE translation player showing the NEXA signing avatar, source transcript and playback timeline",
+    caption: "The built-in demo, shown in the actual translation player.",
   },
-};
+  {
+    number: "03", tag: "LIVE MEETINGS", title: "Bring spoken meetings into view.",
+    description: "Open a meeting in another browser tab, choose Live Meetings, and explicitly share that tab's audio. Incoming speech is transcribed and translated in short segments with captions and an ASL avatar.",
+    detail: "Use a supported desktop browser and enable Share tab audio. You control when sharing starts and stops; transcription needs a configured provider.",
+    href: "/live", action: "Open Live Meetings", image: liveImage,
+    alt: "UNMUTE Live Meetings workspace with explicit audio-sharing controls and the signing avatar",
+    caption: "The Live Meetings workspace, ready for you to choose a tab.",
+  },
+];
 
 export default function FeaturesPage() {
   return (
-    <div className="relative min-h-screen bg-[#0A0A0F] overflow-x-hidden">
-      <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-primary-container/5 blur-[130px] pointer-events-none" />
-      <div className="fixed bottom-0 right-0 w-[600px] h-[300px] bg-secondary-container/5 blur-[120px] pointer-events-none" />
-
+    <div className="min-h-screen bg-[#0A0A0F]">
       <Header />
-
-      <main className="max-w-[1280px] mx-auto px-space-lg md:px-margin-md lg:px-margin-lg pt-32 pb-24">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-24"
-        >
-          <h1 className="text-[3rem] md:text-[4rem] font-extrabold text-on-surface tracking-tight leading-tight mb-4">
-            Unleash the Power of <br className="hidden md:block" />
-            <span className="bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-              Generative Sign Language
-            </span>
-          </h1>
-          <p className="font-body-lg text-body-lg text-on-surface-variant max-w-2xl mx-auto font-medium">
-            Discover how our advanced pipeline processes multimodal input into expressive, lifelike ASL in milliseconds.
-          </p>
-        </motion.div>
-
-        <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          whileInView="show"
-          viewport={{ once: true, margin: "-100px" }}
-          className="space-y-32"
-        >
-          {/* Feature 1 */}
-          <motion.section variants={sectionVariants} className="flex flex-col md:flex-row items-center gap-16">
-            <div className="flex-1 space-y-6">
-              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
-                <span className="material-symbols-outlined text-primary text-2xl">cloud_download</span>
+      <main className="mx-auto max-w-[1280px] px-5 pt-32 pb-20 sm:px-8 lg:px-10">
+        <div className="mb-14 max-w-3xl">
+          <p className="mb-4 text-xs font-semibold uppercase tracking-[0.2em] text-primary">Inside UNMUTE</p>
+          <h1 className="text-4xl font-extrabold leading-[1.12] tracking-tight text-on-surface sm:text-5xl lg:text-6xl">From spoken words<br /><span className="text-primary">to visible signs.</span></h1>
+          <p className="mt-6 max-w-2xl text-base leading-relaxed text-on-surface-variant sm:text-lg">Explore the tools you can use today: import a source, review an ASL translation, and follow shared meeting audio.</p>
+          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-on-surface-variant">UNMUTE translates English speech and captions. It does not recognize hand movements in source videos.</p>
+        </div>
+        <div className="space-y-14 lg:space-y-20">
+          {features.map((feature) => (
+            <section key={feature.number} className="grid items-center gap-6 lg:grid-cols-[0.8fr_1.2fr] lg:gap-10">
+              <div className="min-w-0">
+                <p className="mb-4 flex items-center gap-3 text-xs font-semibold tracking-widest text-primary"><span className="flex h-9 w-9 items-center justify-center rounded-lg border border-primary/20 bg-primary/5">{feature.number}</span>{feature.tag}</p>
+                <h2 className="text-2xl font-bold leading-tight tracking-tight text-on-surface sm:text-3xl">{feature.title}</h2>
+                <p className="mt-4 text-sm leading-relaxed text-on-surface-variant sm:text-base">{feature.description}</p>
+                <p className="mt-3 text-xs leading-relaxed text-on-surface-variant sm:text-sm">{feature.detail}</p>
+                <Link href={feature.href} className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-5 py-3 text-sm font-semibold text-primary hover:bg-primary/20 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">{feature.action}<span aria-hidden="true" className="material-symbols-outlined text-[18px]">arrow_forward</span></Link>
               </div>
-              <h2 className="text-3xl font-extrabold tracking-tight text-on-surface">Omni-Source Ingestion</h2>
-              <p className="text-on-surface-variant leading-relaxed font-medium">
-                Whether it's a live video feed, an uploaded file, or a direct microphone stream, our ingestion layer seamlessly normalizes and processes diverse audio formats. Powered by Whisper V3, it captures intent and tone flawlessly.
-              </p>
-            </div>
-            <div className="flex-1 w-full h-[300px] md:h-[400px] rounded-2xl bg-surface-container-low border border-outline-variant/30 relative overflow-hidden flex items-center justify-center">
-              <div className="absolute inset-0 bg-blueprint opacity-30" />
-              <span className="material-symbols-outlined text-outline/30 text-9xl relative z-10">input</span>
-            </div>
-          </motion.section>
-
-          {/* Feature 2 */}
-          <motion.section variants={sectionVariants} className="flex flex-col md:flex-row-reverse items-center gap-16">
-            <div className="flex-1 space-y-6">
-              <div className="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center border border-secondary/20">
-                <span className="material-symbols-outlined text-secondary text-2xl">translate</span>
-              </div>
-              <h2 className="text-3xl font-extrabold tracking-tight text-on-surface">Zero-Shot LLM Translation</h2>
-              <p className="text-on-surface-variant leading-relaxed font-medium">
-                Our fine-tuned LLM doesn't just translate words; it understands semantics. It converts complex English sentences into grammatically correct Subject-Object-Verb (SOV) ASL glosses, complete with non-manual markers (NMM).
-              </p>
-            </div>
-            <div className="flex-1 w-full h-[300px] md:h-[400px] rounded-2xl bg-surface-container-low border border-outline-variant/30 relative overflow-hidden flex items-center justify-center">
-              <div className="absolute inset-0 bg-blueprint-cyan opacity-20" />
-              <span className="material-symbols-outlined text-outline/30 text-9xl relative z-10">psychology</span>
-            </div>
-          </motion.section>
-
-          {/* Feature 3 */}
-          <motion.section variants={sectionVariants} className="flex flex-col md:flex-row items-center gap-16">
-            <div className="flex-1 space-y-6">
-              <div className="w-12 h-12 rounded-xl bg-tertiary/10 flex items-center justify-center border border-tertiary/20">
-                <span className="material-symbols-outlined text-tertiary text-2xl">3d_rotation</span>
-              </div>
-              <h2 className="text-3xl font-extrabold tracking-tight text-on-surface">Real-Time WebGL Avatar</h2>
-              <p className="text-on-surface-variant leading-relaxed font-medium">
-                Rendered entirely in the browser using React Three Fiber, our custom 3D avatar executes inverse kinematics (IK) in real-time. This ensures fluid, natural movements without the latency of server-side video rendering.
-              </p>
-            </div>
-            <div className="flex-1 w-full h-[300px] md:h-[400px] rounded-2xl bg-[#0a1a1e] border border-primary/20 relative overflow-hidden flex items-center justify-center shadow-lg">
-              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-48 h-48 bg-primary/10 blur-3xl rounded-full" />
-              <span className="material-symbols-outlined text-primary/30 text-9xl relative z-10">sign_language</span>
-            </div>
-          </motion.section>
-
-          {/* Feature 4 */}
-          <motion.section variants={sectionVariants} className="flex flex-col md:flex-row-reverse items-center gap-16">
-            <div className="flex-1 space-y-6">
-              <div className="w-12 h-12 rounded-xl bg-primary-container/20 flex items-center justify-center border border-primary-container/40">
-                <span className="material-symbols-outlined text-primary-container text-2xl">record_voice_over</span>
-              </div>
-              <h2 className="text-3xl font-extrabold tracking-tight text-on-surface">Live Meet Interception</h2>
-              <p className="text-on-surface-variant leading-relaxed font-medium">
-                Integrate directly into your video conferencing calls. Our virtual audio driver intercepts meeting audio and translates it live, providing an accessible overlay for Deaf and Hard-of-Hearing participants instantly.
-              </p>
-            </div>
-            <div className="flex-1 w-full h-[300px] md:h-[400px] rounded-2xl bg-surface-container-low border border-outline-variant/30 relative overflow-hidden flex items-center justify-center">
-              <div className="absolute inset-0 bg-blueprint opacity-30" />
-              <span className="material-symbols-outlined text-outline/30 text-9xl relative z-10">meeting_room</span>
-            </div>
-          </motion.section>
-        </motion.div>
+              <figure className="min-w-0 overflow-hidden rounded-2xl border border-outline-variant/40 bg-surface-container-low shadow-xl shadow-black/20">
+                <div className="flex items-center gap-1.5 border-b border-outline-variant/30 px-4 py-3" aria-hidden="true"><span className="h-2 w-2 rounded-full bg-outline/50" /><span className="h-2 w-2 rounded-full bg-outline/30" /><span className="h-2 w-2 rounded-full bg-primary/50" /><span className="ml-2 text-[10px] font-semibold uppercase tracking-widest text-on-surface-variant">UNMUTE / {feature.tag}</span></div>
+                <Image src={feature.image} alt={feature.alt} sizes="(min-width: 1024px) 60vw, 100vw" className="block h-auto w-full" />
+                <figcaption className="border-t border-outline-variant/30 px-4 py-3 text-xs leading-relaxed text-on-surface-variant">{feature.caption}</figcaption>
+              </figure>
+            </section>
+          ))}
+        </div>
       </main>
-
       <Footer />
     </div>
   );

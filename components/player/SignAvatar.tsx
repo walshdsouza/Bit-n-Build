@@ -20,8 +20,10 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
-import { SignPlan, SignPlanItem } from "@/lib/types";
-import { AvatarPose, lerpPose, restPose, solvePose } from "@/lib/avatar/pose-solver";
+import { SignPlan } from "@/lib/types";
+import { AvatarPose } from "@/lib/avatar/pose-solver";
+import { sampleMotion, secondaryMotion } from "@/lib/avatar/motion-timeline";
+import { solveArmIK } from "@/lib/avatar/arm-ik";
 import {
   buildCharacter,
   FOREARM,
@@ -45,19 +47,26 @@ interface SignAvatarProps {
  * a few pixels tall and those markers become unreadable.
  */
 const VIEWS = {
-  signing: { y: 1.20, targetY: 1.16, dist: 1.95 },
-  full: { y: 1.12, targetY: 0.98, dist: 3.30 },
+  signing: { y: 1.25, targetY: 1.25, dist: 2.40, width: 1.2 },
+  full: { y: 1.03, targetY: 0.98, dist: 3.94, width: 1.25 },
 } as const;
+
+function frameCamera(camera: THREE.PerspectiveCamera, view: keyof typeof VIEWS) {
+  const frame = VIEWS[view];
+  // Fit both vertical body range and horizontal hand workspace, including
+  // narrow split panes. The face stays readable without cropping the hands.
+  const distance = Math.max(frame.dist, frame.width / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect));
+  camera.position.set(0, frame.y, distance);
+  camera.lookAt(0, frame.targetY, 0);
+}
+
 
 /* ---------------------------------------------------------------- *
  * IK + pose application
  * ---------------------------------------------------------------- */
 
 const UP = new THREE.Vector3(0, 1, 0);
-const _a = new THREE.Vector3();
-const _b = new THREE.Vector3();
 const _dir = new THREE.Vector3();
-const _axis = new THREE.Vector3();
 
 /** Places a capsule (Y-aligned, centred) so it spans `from` → `to`. */
 function spanCapsule(mesh: THREE.Mesh, from: THREE.Vector3, to: THREE.Vector3) {
@@ -72,77 +81,11 @@ function spanCapsule(mesh: THREE.Mesh, from: THREE.Vector3, to: THREE.Vector3) {
   mesh.scale.y = len / nominal;
 }
 
-/**
- * Two-bone IK. Solves elbow position geometrically.
- *
- * Instead of the fragile "cross-product pole vector + quaternion rotation" approach
- * (which flips direction depending on arm angle), we directly compute the elbow by
- * decomposing in the plane formed by the arm direction and the outward (side) vector:
- *
- *   elbow = shoulder
- *         + armDir * (l1 * cos α)        ← along the arm
- *         + bendDir * (l1 * sin α)       ← perpendicular, always outward
- *
- * bendDir = component of "outward" that is perpendicular to armDir.
- * This is guaranteed to push the elbow to the correct side for any hand position.
- */
-function solveArm(
-  shoulder: THREE.Vector3,
-  target: THREE.Vector3,
-  l1: number,
-  l2: number,
-  side: 1 | -1,
-  out: THREE.Vector3,
-) {
-  _a.subVectors(target, shoulder);
-  let dist = _a.length();
-  const max = (l1 + l2) * 0.999;
-  if (dist > max) {
-    _a.multiplyScalar(max / dist);
-    target.copy(shoulder).add(_a);
-    dist = max;
-  }
-  dist = Math.max(dist, 1e-4);
-
-  // Law of cosines: angle at shoulder between arm dir and upper arm.
-  const cosAlpha = Math.min(1, Math.max(-1, (l1 * l1 + dist * dist - l2 * l2) / (2 * l1 * dist)));
-  const sinAlpha = Math.sqrt(1 - cosAlpha * cosAlpha);
-
-  // Arm direction (shoulder → hand, normalised).
-  _dir.copy(_a).divideScalar(dist);
-
-  // Pole vector: elbow bends DOWNWARD and slightly to the side — this matches
-  // the natural resting arm posture a human interpreter uses. A pure outward
-  // (side) vector caused elbow-flips when the hand moved across the centreline.
-  // Bias toward -Y (down) keeps elbows below the wrist for all typical signing
-  // positions (waist-to-forehead range).
-  _b.set(side * 0.45, -0.80, 0.40).normalize();
-
-  // Remove the component of _b parallel to the arm direction (Gram-Schmidt).
-  // This leaves only the perpendicular in-plane bend direction.
-  const proj = _b.dot(_dir);
-  _b.addScaledVector(_dir, -proj);
-  const bendLen = _b.length();
-  if (bendLen < 1e-6) {
-    // Arm points exactly along pole — absolute fallback.
-    _b.set(0, -1, 0);
-    _b.addScaledVector(_dir, -_b.dot(_dir)).normalize();
-  } else {
-    _b.divideScalar(bendLen);
-  }
-
-  // Elbow = shoulder + along * l1·cosα + perp * l1·sinα
-  out
-    .copy(_dir).multiplyScalar(l1 * cosAlpha)
-    .addScaledVector(_b, l1 * sinAlpha)
-    .add(shoulder);
-}
-
 function applyFingers(hand: HandRig, curl: readonly number[], spread: number, side: 1 | -1) {
   hand.fingers.forEach((finger, i) => {
     const c = curl[i] ?? 0;
     finger.joints.forEach((joint, j) => {
-      joint.rotation.x = -c * (j === 0 ? 1.25 : j === 1 ? 1.05 : 0.85);
+      joint.rotation.x = c * (j === 0 ? 1.25 : j === 1 ? 1.05 : 0.85);
     });
     if (i > 0) {
       finger.root.rotation.z = (i - 2.5) * spread * 0.12 * side;
@@ -167,21 +110,17 @@ function applyPose(rig: Rig, pose: AvatarPose, blink: number) {
     side: 1 | -1,
   ) => {
     _target.set(handPose.pos.x, handPose.pos.y, handPose.pos.z);
-    solveArm(shoulder, _target, UPPER_ARM, FOREARM, side, _elbow);
+    const solved = solveArmIK(shoulder, _target, UPPER_ARM, FOREARM, side);
+    _target.set(solved.target.x, solved.target.y, solved.target.z);
+    _elbow.set(solved.elbow.x, solved.elbow.y, solved.elbow.z);
     spanCapsule(upper, shoulder, _elbow);
     spanCapsule(fore, _elbow, _target);
     elbowMesh.position.copy(_elbow);
 
     hand.group.position.copy(_target);
-    // Base rotation: the hand mesh is built with fingers pointing +Y and the
-    // back of the hand (disc) toward -Z (away from camera). Rotate 180° around
-    // Y so the PALM faces the camera (+Z) by default, then apply the sign's
-    // wrist rotation on top.
-    hand.group.rotation.set(
-      handPose.rot.x,
-      handPose.rot.y + Math.PI,
-      handPose.rot.z * side,
-    );
+    // Both hand meshes use +Y fingers and a +Z palm normal. The solver
+    // already mirrors the weak hand, so no extra half turn or roll is needed.
+    hand.group.rotation.set(handPose.rot.x, handPose.rot.y, handPose.rot.z);
     applyFingers(hand, handPose.curl, handPose.spread, side);
   };
 
@@ -210,20 +149,6 @@ function applyPose(rig: Rig, pose: AvatarPose, blink: number) {
  * Component
  * ---------------------------------------------------------------- */
 
-function activeSign(
-  plan: SignPlan | null,
-  t: number,
-): { item: SignPlanItem | null; progress: number } {
-  if (!plan?.items.length) return { item: null, progress: 0 };
-  for (const it of plan.items) {
-    if (t >= it.startTime && t < it.endTime) {
-      const span = Math.max(it.endTime - it.startTime, 1e-3);
-      return { item: it, progress: (t - it.startTime) / span };
-    }
-  }
-  return { item: null, progress: 0 };
-}
-
 export default function SignAvatar({
   plan,
   currentTime,
@@ -234,6 +159,7 @@ export default function SignAvatar({
   const mountRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef({ plan, currentTime, playing });
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const viewRef = useRef<keyof typeof VIEWS>(fullBody ? "full" : "signing");
   const [ready, setReady] = useState(false);
   const [fps, setFps] = useState(0);
   const [activeGloss, setActiveGloss] = useState("—");
@@ -247,9 +173,8 @@ export default function SignAvatar({
   useEffect(() => {
     const cam = cameraRef.current;
     if (!cam) return;
-    const v = VIEWS[view];
-    cam.position.set(0, v.y, v.dist);
-    cam.lookAt(0, v.targetY, 0);
+    viewRef.current = view;
+    frameCamera(cam, view);
   }, [view, ready]);
 
   useEffect(() => {
@@ -264,9 +189,13 @@ export default function SignAvatar({
     camera.lookAt(0, v0.targetY, 0);
     cameraRef.current = camera;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+    const context = renderer.getContext();
+    const debugRenderer = context.getExtension("WEBGL_debug_renderer_info");
+    const gpuName = debugRenderer ? String(context.getParameter(debugRenderer.UNMASKED_RENDERER_WEBGL)) : "";
+    let usePostProcessing = !/swiftshader|llvmpipe|software|basic render/i.test(gpuName);
+    renderer.setPixelRatio(usePostProcessing ? Math.min(window.devicePixelRatio, 1.5) : 1);
+    renderer.shadowMap.enabled = usePostProcessing;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     // Filmic tone mapping keeps highlights from clipping to flat white, which
     // is most of what separates "3D render" from "plastic toy".
@@ -294,7 +223,7 @@ export default function SignAvatar({
     const key = new THREE.DirectionalLight(0xfff8f0, 2.2);
     key.position.set(1.2, 3.2, 2.8);
     key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.mapSize.set(1024, 1024);
     key.shadow.camera.near = 0.5;
     key.shadow.camera.far = 8;
     key.shadow.camera.left = -1.4;
@@ -396,6 +325,7 @@ export default function SignAvatar({
     renderer.domElement.addEventListener("pointerdown", onDown);
     renderer.domElement.addEventListener("pointermove", onMove);
     renderer.domElement.addEventListener("pointerup", onUp);
+    renderer.domElement.addEventListener("pointercancel", onUp);
 
     // Bloom. Passes render into a half-float target, so the values the bloom
     // threshold sees are linear HDR — not the tone-mapped 0..1 the canvas gets.
@@ -404,7 +334,7 @@ export default function SignAvatar({
     // blooms into a white blob instead of just the glowing rings.
     const hdrTarget = new THREE.WebGLRenderTarget(1, 1, {
       type: THREE.HalfFloatType,
-      samples: 2,
+      samples: 0,
     });
     const composer = new EffectComposer(renderer, hdrTarget);
     composer.addPass(new RenderPass(scene, camera));
@@ -420,47 +350,38 @@ export default function SignAvatar({
       bloom.setSize(w, h);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
+      frameCamera(camera, viewRef.current);
     };
     resize();
     const ro = new ResizeObserver(resize);
     ro.observe(mount);
 
     let raf = 0;
-    let current: AvatarPose = restPose();
     let frames = 0;
     let fpsClock = performance.now();
     let lastGloss = "";
-    let nextBlink = performance.now() + 2200;
-    let blinkUntil = 0;
-    const clock = new THREE.Clock();
+    const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let idleTime = 0;
+    let lastFrame = performance.now();
 
     const tick = () => {
       raf = requestAnimationFrame(tick);
-      const dt = Math.min(clock.getDelta(), 0.1);
       const now = performance.now();
-      const { plan: p, currentTime: t, playing: isPlaying } = stateRef.current;
+      const { plan: p, currentTime: t } = stateRef.current;
 
-      const { item, progress } = activeSign(p, t);
-      const target = solvePose(item, progress);
+      const { item, pose } = sampleMotion(p, t);
+      const dt = Math.min((now - lastFrame) / 1000, 0.1);
+      lastFrame = now;
+      if (!p) idleTime += dt;
+      const ambient = secondaryMotion(p ? t : idleTime, motionPreference.matches);
+      // Pose and facial markers freeze exactly with media; only the empty
+      // preview uses an idle clock. Reduced motion preserves essential signing.
+      applyPose(rig, pose, ambient.blink);
+      rig.root.position.y = 0;
+      rig.root.rotation.y = yaw + ambient.sway * (item ? 0.25 : 1);
 
-      const k = Math.min(1, dt * (isPlaying ? 14 : 8));
-      current = lerpPose(current, target, k);
-
-      // Idle blink — cheap, and its absence is uncanny.
-      if (now > nextBlink) {
-        blinkUntil = now + 130;
-        nextBlink = now + 2400 + Math.random() * 3200;
-      }
-      const blink = now < blinkUntil ? Math.sin(((blinkUntil - now) / 130) * Math.PI) : 0;
-
-      applyPose(rig, current, blink);
-
-      // Breathing / weight shift when idle.
-      const breathe = Math.sin(now * 0.0011) * 0.006;
-      rig.root.position.y = item ? breathe * 0.35 : breathe;
-      rig.root.rotation.y = yaw + (item ? 0 : Math.sin(now * 0.0004) * 0.03);
-
-      composer.render();
+      if (usePostProcessing) composer.render();
+      else renderer.render(scene, camera);
 
       const gloss = item?.fingerspell ?? item?.gloss ?? "—";
       if (gloss !== lastGloss) {
@@ -470,7 +391,16 @@ export default function SignAvatar({
 
       frames++;
       if (now - fpsClock >= 1000) {
-        setFps(Math.round((frames * 1000) / (now - fpsClock)));
+        const measuredFps = Math.round((frames * 1000) / (now - fpsClock));
+        setFps(measuredFps);
+        // Prefer responsive, readable signing to decorative bloom on a slow
+        // GPU. Never change the media clock or skip articulation to catch up.
+        if (usePostProcessing && measuredFps < 24) {
+          usePostProcessing = false;
+          renderer.setPixelRatio(1);
+          renderer.shadowMap.enabled = false;
+          resize();
+        }
         frames = 0;
         fpsClock = now;
       }
@@ -485,6 +415,7 @@ export default function SignAvatar({
       renderer.domElement.removeEventListener("pointerdown", onDown);
       renderer.domElement.removeEventListener("pointermove", onMove);
       renderer.domElement.removeEventListener("pointerup", onUp);
+      renderer.domElement.removeEventListener("pointercancel", onUp);
       rig.dispose();
       composer.dispose();
       haloGeo.dispose();

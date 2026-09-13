@@ -1,187 +1,311 @@
-# GestureSync AI
+<p align="center">
+  <img src="public/brand/unmute-logo.jpg" alt="UNMUTE logo" width="320" />
+</p>
 
-Turns spoken audio, recorded video, or a YouTube link into a real-time **3D sign
-language avatar** — in American Sign Language (ASL) or **Indian Sign Language (ISL)**.
+<h1 align="center">UNMUTE</h1>
 
+<p align="center">
+  English speech and captions, made visible through a 3D ASL avatar.
+</p>
+
+<p align="center">
+  <a href="https://unmute-ai.vercel.app">Live app</a> ·
+  <a href="https://unmute-ai.vercel.app/player/demo">Try the demo</a> ·
+  <a href="https://unmute-ai.vercel.app/features">Features</a> ·
+  <a href="https://unmute-ai.vercel.app/live">Live Meetings</a>
+</p>
+
+UNMUTE turns spoken media and captions into an American Sign Language (ASL) signing plan, rendered by the NEXA avatar. Import a YouTube video or recording, review and edit its transcript, control playback, and save the track in your browser. Live Meetings brings the same caption-and-avatar experience to audio shared from a meeting tab.
+
+The web app currently uses **English input and ASL output**. It is a prototype with limited sign vocabulary; unfamiliar words use fingerspelling. It does not recognize hand movements in source videos.
+
+![UNMUTE player with the NEXA avatar, source transcript, gloss inspector and playback controls](public/features/player.png)
+
+## Contents
+
+- [What you can do](#what-you-can-do)
+- [Run locally](#run-locally)
+- [Configure services](#configure-services)
+- [Use the app](#use-the-app)
+- [How it works](#how-it-works)
+- [API](#api)
+- [Development and tests](#development-and-tests)
+- [Deploy to Vercel](#deploy-to-vercel)
+- [Limits and troubleshooting](#limits-and-troubleshooting)
+- [Firefox extension](#firefox-extension)
+- [Documentation and credits](#documentation-and-credits)
+
+## What you can do
+
+| Feature | Behavior |
+| --- | --- |
+| YouTube imports | Retrieve timed captions through Supadata, with generated transcription as a fallback. |
+| Media uploads | Extract and transcribe speech from video or audio files. |
+| Tab audio capture | Record audio from a browser tab, review it, then create a translation. |
+| Live Meetings | Translate a meeting tab, your microphone, or both into captions and ASL playback. |
+| Playback controls | Play, pause, seek, replay, and choose 0.5×, 1×, 1.5× or 2× speed. |
+| Transcript editing | Inspect the text behind a segment and regenerate its signing plan. |
+| Device saves | Retain the transcript, edits, signing plan, playback position and uploaded media in IndexedDB. |
+| SiGML export | Download the generated sign notation from the player. |
+
+The built-in demo works without an account or API key. Saved tracks appear under **Recent Translations** on the dashboard.
+
+## Run locally
+
+> **Source status:** The live UNMUTE app linked above contains release changes that have not yet been published to `main`. Cloning this repository currently gives the earlier source version. Feature descriptions, service configuration, API additions and the source layout below describe the deployed release. The basic setup commands here work with `main`; release-only development tools are identified below.
+
+**Requirements:** Node.js **22.x**, npm, and an internet connection for dependency installation and the first development/build run.
+
+```sh
+git clone https://github.com/walshdsouza/Bit-n-Build.git
+cd Bit-n-Build
+npm ci
+npm run dev -- --port 3111
 ```
-speech → transcript → prosody → gloss → HamNoSys → SiGML → 3D avatar
+
+Open [localhost:3111](http://localhost:3111), or go straight to the [demo player](http://localhost:3111/player/demo). Port `3111` matches the repository's API and browser test defaults. Running `npm run dev` without a port uses Next.js's default port, `3000`.
+
+No environment file is needed for the demo. To import media or use Live Meetings, configure the relevant services below and restart the development server.
+
+FFmpeg is supplied by the app's dependencies. In the deployed release's source, `predev` and `build` also download and verify a pinned official yt-dlp binary on Windows x64 and Linux x64 for the local YouTube fallback. Other local platforms skip that downloader; hosted Supadata imports do not depend on it. This preparation script is pending publication to `main`.
+
+## Configure services
+
+Create `.env.local` in the repository root. Fill only the values required for the features you want to run:
+
+```dotenv
+# Speech transcription and optional AI gloss translation
+GROQ_API_KEY=
+OPENAI_API_KEY=
+
+# Hosted YouTube caption retrieval and audio transcription
+SUPADATA_API_KEY=
+
+# Optional Supabase authentication and account storage
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
 ```
 
-## Getting started
+| Capability | Required configuration |
+| --- | --- |
+| Demo and rule-based text translation | None |
+| YouTube URL imports on Vercel | `SUPADATA_API_KEY` |
+| Uploaded media and recorded tab audio | `GROQ_API_KEY` or `OPENAI_API_KEY`, on the server or in browser Settings |
+| Live Meetings | **Server-side** `GROQ_API_KEY` or `OPENAI_API_KEY` |
+| AI-assisted gloss translation | Groq or OpenAI key; local rules remain the fallback |
+| Save on this device | IndexedDB support; no account or database required |
+| Authentication and account history | Supabase configuration, database schema, storage and access policies |
 
-```bash
-npm install
-npm run dev
+### Provider keys
+
+Groq is preferred when both Groq and OpenAI are configured. OpenAI is used when no Groq key is available; transcription does not automatically switch providers after a failed request.
+
+**Settings → API Keys** accepts personal Groq, OpenAI and Supadata keys. These are stored in the current browser's local storage and sent through the app server to the relevant provider. For ordinary import/translation requests, a personal key overrides the server key for that provider. Clear a field and save to remove the personal override.
+
+Live Meetings uses server credentials only. Adding a personal key in Settings does not configure that feature.
+
+`.env.local` is ignored by Git. Provider secrets belong in server environment variables, without a `NEXT_PUBLIC_` prefix. The two Supabase variables above are public client configuration.
+
+### Optional Supabase setup
+
+Supabase is separate from the player's **Save** feature. Guest translations and device saves work without it.
+
+The account integration expects `projects` and `transcript_segments` tables and a `media` storage bucket. This repository does **not** include database migrations or a complete provisioning script, so adding public credentials alone does not create those resources. Authentication redirects and appropriate access policies also need to be configured in the Supabase project.
+
+The client reads the public key from `NEXT_PUBLIC_SUPABASE_ANON_KEY`; a separately named `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` variable is not read by the current code.
+
+## Use the app
+
+### Translate a recording or YouTube video
+
+1. Open **Dashboard** and upload a video/audio file or paste a public YouTube URL.
+2. Select **Synthesize ASL**. Longer YouTube imports show progress while transcription is prepared.
+3. In the player, use the timeline and speed controls to review the result. Edit source text in the gloss inspector to regenerate signs.
+4. Choose **Save** to keep the track on this device, or **SiGML** to download its sign notation.
+
+Saved tracks belong to the current browser and website address. Clearing browser data removes them; they are not synchronized across devices.
+
+### Capture audio from a browser tab
+
+1. Open the source video in another tab in desktop Chrome or Edge.
+2. On the dashboard, choose **Start tab audio capture**.
+3. Select the source tab and enable **Share tab audio**.
+4. Play the source, stop recording, review the audio, then select **Synthesize ASL**.
+
+Only the shared audio is recorded. Screen video is not uploaded. Capture stops at ten minutes or the recording-size limit.
+
+### Follow a live meeting
+
+1. Open **Live Meetings** and choose **Meeting tab** for other participants, or **My microphone** to translate your own voice without a meeting.
+2. For a meeting, select **Include my microphone** if your own words should also be translated.
+3. Select **Start live captions** and allow the requested audio access. For tab sharing, use desktop Chrome or Edge and enable **Share tab audio**.
+4. Check the audio level indicator, then speak or play the meeting audio. Captions and signs appear after a few seconds.
+5. Keep UNMUTE beside your meeting. Select **Stop sharing** when finished; both tab and microphone access are released.
+
+Live captions arrive after five-second audio windows and transcription processing. Microphone access is requested only when explicitly selected. The screen distinguishes silence from transcription delays and provides a retry on failure. Signing waits for the avatar to load and pauses while the tab is hidden, then resumes when you return. Recent captions remain on the page until you start again or leave.
+
+## How it works
+
+```mermaid
+flowchart LR
+    Y[YouTube URL] --> T[Timed transcript]
+    F[Video or audio file] --> T
+    M[Shared meeting audio] --> T
+    T --> G[ASL gloss]
+    G --> P[SiGML and motion plan]
+    P --> A[NEXA avatar]
 ```
 
-Open <http://localhost:3000>. The player at `/player/demo` works with no
-configuration — it ships a demo transcript and the rule-based glosser.
+Supadata handles hosted YouTube ingestion. Uploaded media passes through FFmpeg and Whisper; live audio is sent as independent WAV segments. The translation layer applies language rules or AI glossing, builds HamNoSys/SiGML notation, and creates a timed motion plan. Timing and text cues guide articulation and non-manual markers.
 
-### Optional API keys
+The player uses the source media as its clock when available and a motion-plan clock otherwise. Unknown vocabulary is fingerspelled. The library retains ASL, ISL and experimental BSL profiles for development, while the web interface uses ASL.
 
-Transcription and LLM glossing use Groq (preferred, faster) or OpenAI. Without a
-key the app still runs: transcription falls back to a mock and glossing falls
-back to a deterministic rule engine.
+**Stack:** Next.js 16 · React 19 · TypeScript · Tailwind CSS 4 · Three.js · Supadata · Whisper via Groq/OpenAI · optional Supabase · Vercel
 
-```bash
-# .env.local
-GROQ_API_KEY=...
-OPENAI_API_KEY=...
+```text
+app/                     Pages, authentication and API routes
+components/dashboard/    Media ingestion, tab capture and saved history
+components/player/       Timeline, transcript inspector and 3D avatar
+components/live/         Meeting audio capture, request queue and captions
+components/marketing/    Landing-page components
+lib/                     Transcription, glossing, notation and motion planning
+lib/dictionaries/        Sign vocabulary and language data
+utils/supabase/          Optional authentication and database clients
+public/                  Branding, screenshots and the NEXA model
+scripts/                 Downloader preparation and demo recording
+extension/               Optional standalone Firefox sidebar
+tests/                   Pipeline, API and browser tests
 ```
-
-Keys can also be supplied per-request via `x-groq-api-key` / `x-openai-api-key`
-headers, or through the in-app Settings page.
-
-### YouTube ingestion
-
-Two paths, tried in order:
-
-1. **Captions** — needs Python with `youtube-transcript-api`:
-   ```bash
-   pip install youtube-transcript-api
-   ```
-2. **Audio fallback**, used when a video has no captions (or the caption reader
-   isn't installed) — downloads the audio and runs Whisper. Needs `yt-dlp` and
-   an API key:
-   ```bash
-   pip install -U yt-dlp
-   ```
-
-> **yt-dlp needs a JavaScript runtime.** YouTube gates media URLs behind a JS
-> challenge; without a runtime, extraction appears to work but every download
-> fails with `HTTP Error 403`. Install [Deno](https://deno.com) and keep
-> `yt-dlp` current — it needs frequent updates to track YouTube's changes.
-
-Videos with captions work with neither of the above beyond Python.
-
-## Features
-
-- **Two sign languages, properly.** ISL is not ASL relabelled — it has its own
-  SOV grammar, two-handed manual alphabet, post-verbal negation and its own
-  lexicon. Switch targets from the picker in the player.
-- **Real notation output.** Emits valid **SiGML**, downloadable from the player,
-  so translations drive any CWASA/JASigning renderer as well as our own avatar.
-- **Prosody-aware.** Speech rate and affect modulate sign size, speed and facial
-  non-manual markers.
-- **Degrades gracefully.** No API key, no dictionary entry, or no source video —
-  each has a real fallback rather than a failure.
 
 ## API
 
-| Endpoint | Purpose |
-|---|---|
-| `POST /api/process-video` | Ingest a YouTube URL or uploaded file → transcript |
-| `POST /api/translate` | Transcript → gloss + SiGML + motion plan (one shot) |
-| `POST /api/gloss` | Transcript → gloss rows only |
-| `POST /api/sigml` | Gloss rows → SiGML + motion plan |
-| `GET /api/sign-languages` | Supported languages and their grammar profiles |
+| Route | Input and result |
+| --- | --- |
+| `POST /api/process-video` | JSON YouTube `url` or multipart `file` → timed transcript, or a pending import |
+| `POST /api/transcribe` | Multipart audio `file` → Whisper transcript |
+| `POST /api/live` | Multipart short PCM WAV `audio` → captions and an ASL plan |
+| `POST /api/translate` | Transcript `segments` → gloss rows, SiGML and motion plan |
+| `POST /api/gloss` | Transcript `segments` → gloss rows and estimated prosody |
+| `POST /api/sigml` | `glossRows` → SiGML and motion plan |
+| `GET /api/sign-languages` | Language profiles and availability metadata |
 
-```bash
-curl -X POST http://localhost:3000/api/translate \
-  -H 'Content-Type: application/json' \
-  -d '{"lang":"ISL","segments":[{"start":0,"end":3,"text":"Yesterday I went to school."}]}'
-# → gloss: "YESTERDAY IX-1 SCHOOL GO"
+For example, send this JSON to `POST /api/translate`:
+
+```json
+{
+  "lang": "ASL",
+  "segments": [
+    { "start": 0, "end": 3, "text": "Hello my friend." }
+  ]
+}
 ```
+
+`/api/translate` returns `glossRows`, `plan`, `sigml` and `stats`. AI-generated wording can vary; the rule engine is deterministic.
+
+YouTube imports may return HTTP `202` with a `jobToken`. Poll by posting the same `url` and that token to `/api/process-video`; do not start a new job on every poll. `/api/ingest` is a compatibility alias. The legacy `/api/status/:jobId` route does not poll Supadata jobs.
+
+Ordinary transcription/translation endpoints accept the applicable `x-groq-api-key`, `x-openai-api-key` or `x-supadata-api-key` headers. `/api/live` uses server credentials only.
+
+## Development and tests
+
+The release source includes additional test and recording tools that are pending publication to `main`. On the current `main` branch, use `dev`, `build`, `start`, `lint`, `test` and `test:api`; the browser suite and demo-recording scripts below are references for the deployed release's working tree.
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the development server |
+| `npm run build` | Prepare the downloader and create a production build |
+| `npm run start` | Serve a completed production build |
+| `npm run lint` | Run ESLint |
+| `npm test` | Run pipeline, timing, motion, media, live-audio and provider tests without a server |
+| `npm run test:api` | Run HTTP integration checks against a running app |
+| `npm run test:browser` | Run Playwright checks against a running app |
+
+For API and browser checks, keep the app running on port `3111` in another terminal. Playwright does not start the server automatically.
+
+```sh
+npm test
+npm run lint
+npx tsc --noEmit
+npx playwright install chromium
+npm run test:browser
+```
+
+Run `npm run test:api` against a server without Groq/OpenAI keys for deterministic grammar and missing-key assertions. `API_HAS_TRANSCRIPTION_KEY=1` skips missing-key assertions when testing a configured server, but does not make remote AI output deterministic.
+
+Optional environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `API_BASE_URL` | API test server; defaults to `http://localhost:3111` |
+| `PLAYWRIGHT_BASE_URL` | Browser test server; defaults to `http://localhost:3111` |
+| `PLAYWRIGHT_CHANNEL` | Use an installed browser, such as `msedge` |
+| `UI_TEST_SERVER_PROVIDER` | Set to `groq`, `openai` or `none` to check the displayed transcription configuration |
+| `API_TEST_YOUTUBE=1` | Include a real public YouTube import in the API suite; requires provider access |
+
+In PowerShell, set variables with `$env:NAME='value'` before running a command. The release browser suite writes its results under `logs/`.
+
+To serve a local production build:
+
+```sh
+npm run build
+npm run start -- --port 3111
+```
+
+The optional `scripts/record-demo.mjs` and `scripts/finalize-demo.mjs` scripts record a captioned demo. Final video encoding additionally requires `ffmpeg` on your system `PATH`.
+
+## Deploy to Vercel
+
+1. Import the repository into Vercel, or link it with the CLI below.
+2. Use the **Next.js** preset, repository root, and **Node.js 22.x**.
+3. Add the required server keys from [Configure services](#configure-services) to the production environment. Add Supabase variables only if that integration has been provisioned.
+4. Deploy using `npm run build`. After changing server environment variables, create a new deployment.
+5. Open the production domain. The root route `/` is the public landing page.
+
+```sh
+npx vercel login
+npx vercel link
+npx vercel deploy --prod
+```
+
+`.vercelignore` excludes local logs, test artifacts and the standalone extension from website deployments. Native media dependencies are included through `next.config.ts` file tracing.
+
+## Limits and troubleshooting
+
+| Situation | What to check |
+| --- | --- |
+| YouTube import is not configured | Set `SUPADATA_API_KEY` on the server and redeploy, or add a personal Supadata key in Settings. |
+| A video cannot be imported | Check that it is public and has usable English speech/captions. Provider plans, quotas and access restrictions still apply. Try tab audio capture or a file upload. |
+| Transcription key error | Check the selected provider's key. A saved personal key takes precedence over the server key for that provider. |
+| Live Meetings cannot hear your own voice | Choose **My microphone**, or select **Include my microphone** alongside **Meeting tab**. Tab audio alone excludes your own microphone. |
+| Live Meetings cannot transcribe | Check the audio level and selected source. A **server** transcription key is required. A stalled request stops with a retry instead of waiting indefinitely. |
+| A saved track is missing | Use the same browser and website address where it was saved. Browser data clearing removes local tracks. |
+| A YouTube playback rate is unavailable | The player reports the video's supported rate instead of claiming the requested rate was applied. |
+
+- **Uploads:** the dashboard and Vercel routes accept files up to **4 MB**. The local ingestion API accepts larger files, but this does not increase the dashboard's limit.
+- **Tab recordings:** capped at **10 minutes or 3.8 MB**. Live Meetings processes short segments and stops sharing if its bounded queue falls too far behind.
+- **Signing quality:** limited by the dictionary, translation rules and generated plan. Software tests do not certify every sign's linguistic accuracy; dense or unfamiliar speech can require additional signing time.
+- **Source language:** the web pipeline expects English. It does not infer a target sign language from the source audio or interpret visible signing gestures.
+
+For local development without Supadata, an optional Python caption fallback is available through `python -m pip install youtube-transcript-api`. Set `PYTHON_PATH` only if a specific interpreter is needed. This fallback is skipped on Vercel.
 
 ## Firefox extension
 
-A **standalone** Firefox sidebar that captions Google Meet calls with a signing
-avatar. Standalone means exactly that: it runs no server and does not need the
-web app above. Audio is transcribed by calling Whisper directly with your own
-API key, and glossing, HamNoSys, SiGML and motion planning all run inside the
-extension using the same `lib/` code as the web app.
+`extension/` contains an optional standalone Firefox sidebar for Google Meet with separate provider settings. The web app's Live Meetings feature does not require it.
 
-> **Firefox only.** It uses Manifest V2 and the `sidebar_action` API, neither of
-> which Chrome supports.
+After installing the root dependencies:
 
-### Build
-
-```bash
+```sh
 cd extension
-npm install
+npm ci
 npm run build
 ```
 
-Output goes to `extension/dist/`. Use `npm run watch` while developing — note
-that it only copies the HTML/CSS/model once, so re-run `npm run build` after
-editing those.
+In Firefox, open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select `extension/manifest.json`. Configure a transcription key in the extension's own settings before starting capture.
 
-### Run it
+See [build instructions](extension/README-BUILD.txt), [reviewer/source instructions](extension/store/SOURCE_SUBMISSION.md), and the [extension privacy policy](extension/store/PRIVACY.md) for details and packaging commands.
 
-1. Open `about:debugging#/runtime/this-firefox` in Firefox
-2. Click **Load Temporary Add-on…**
-3. Select `extension/manifest.json`
-4. Open the sidebar with **Ctrl+Shift+G** (or the toolbar button)
+## Documentation and credits
 
-A temporary add-on is removed when Firefox restarts; repeat these steps to load
-it again.
-
-### Set an API key
-
-Transcription needs a Groq or OpenAI key — without one, nothing is transcribed.
-Open the extension's **Settings** (the button in the sidebar, or Add-ons
-Manager → GestureSync AI → Preferences), paste a key and choose ASL or ISL.
-Keys are stored in `browser.storage.local` on your machine and are sent only to
-the provider you configured.
-
-### Use it
-
-Join a Google Meet call, open the sidebar and press **Start capture**. The
-avatar signs the speech as it is transcribed.
-
-### Publishing to addons.mozilla.org
-
-The package passes Mozilla's own validator with **0 errors**:
-
-```bash
-cd extension
-npm run lint:ext        # web-ext lint
-npm run package         # → web-ext-artifacts/*.zip   (upload this)
-npm run package:source  # → web-ext-artifacts/*-source.zip
-```
-
-AMO requires the source archive too, because `dist/` is minified. Everything a
-reviewer needs is in [`extension/store/`](extension/store/):
-
-| File | Use |
-|---|---|
-| `LISTING.md` | Paste-ready name, summary, description, tags, reviewer notes |
-| `PRIVACY.md` | Privacy policy — mandatory, since the add-on declares `personalCommunications` |
-| `SOURCE_SUBMISSION.md` | Build instructions for reviewers |
-
-Four `UNSAFE_VAR_ASSIGNMENT` warnings remain. They are `innerHTML` calls inside
-the minified React and three.js builds, not our code, and the source archive
-covers them.
-
-**Before submitting**, a human still has to decide: a support email address,
-the store screenshots, and the category. `LISTING.md` marks each of these
-**[decide]**. Bump `version` in `manifest.json` for every upload — AMO rejects
-a version it has already seen.
-
-## Testing
-
-```bash
-npm test        # pipeline + timing (no server needed)
-npm run test:api   # API integration — needs `npx next dev -p 3111` running
-```
-
-The `lib/` layer has no React or three.js imports, so it compiles with `tsc`
-and runs in plain Node — no test framework. Covers grammar invariants for both
-languages, HamNoSys/SiGML validity, malformed input, plan timing, and pose-solver
-numeric safety.
-
-## Documentation
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full pipeline, how ISL
-support is implemented, how to add another sign language, and known limitations.
-
-## Acknowledgements
-
-Architecture informed by [Kozha](https://github.com/zhan-a/Kozha) (MIT) for the
-HamNoSys → SiGML notation spine, and
-[GenASL](https://github.com/sanaro99/GenASL) (GPL-3.0) for prosody-driven,
-plan-then-synthesise avatar generation. No code was copied from either project.
-
-## Stack
-
-Next.js 16 · React 19 · TypeScript · Tailwind CSS v4 · three.js · Whisper
+- [Architecture](docs/ARCHITECTURE.md) — notation, language profiles and pipeline design; some internal names predate UNMUTE.
+- [NEXA license](public/models/NEXA-LICENSE.txt) — attribution and terms for the included NEXA implementation kit.
+- Design references: [Kozha](https://github.com/zhan-a/Kozha) for the HamNoSys/SiGML pipeline and [GenASL](https://github.com/sanaro99/GenASL) for prosody-aware avatar planning.

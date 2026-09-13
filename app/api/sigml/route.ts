@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GlossRow, ProsodyFrame } from "@/lib/types";
 import { buildSignPlan } from "@/lib/sign-plan";
-import { getProfile, isSupported } from "@/lib/sign-languages";
+import { getProfile } from "@/lib/sign-languages";
+import { readJsonObject, readLanguage, readDuration, readGlossRows, readProsody, RequestError } from "@/lib/request-validation";
 
 /**
  * POST /api/sigml
@@ -12,27 +12,11 @@ import { getProfile, isSupported } from "@/lib/sign-languages";
  */
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const { glossRows, lang, prosody, duration } = body as {
-      glossRows?: GlossRow[];
-      lang?: string;
-      prosody?: ProsodyFrame[];
-      duration?: number;
-    };
-
-    if (!Array.isArray(glossRows) || glossRows.length === 0) {
-      return NextResponse.json(
-        { error: "Provide a non-empty `glossRows` array." },
-        { status: 400 },
-      );
-    }
-
-    if (lang && !isSupported(lang)) {
-      return NextResponse.json(
-        { error: `Unsupported sign language "${lang}". Try ASL, ISL or BSL.` },
-        { status: 400 },
-      );
-    }
+    const body = await readJsonObject(req);
+    const glossRows = readGlossRows(body.glossRows);
+    const lang = readLanguage(body.lang);
+    const prosody = readProsody(body.prosody);
+    const duration = readDuration(body.duration);
 
     const profile = getProfile(lang ?? glossRows[0]?.lang);
     const plan = buildSignPlan(glossRows, {
@@ -53,7 +37,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal Server Error";
-    console.error("[/api/sigml]", error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    if (!(error instanceof RequestError)) console.error("[/api/sigml]", error);
+    return NextResponse.json({ error: message }, { status: error instanceof RequestError ? error.status : 500 });
   }
 }

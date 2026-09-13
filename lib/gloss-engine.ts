@@ -27,7 +27,11 @@ const TIME_WORDS = new Set([
   "LATER", "SOON", "ALREADY", "YEAR", "WEEK", "MONTH", "MORNING", "EVENING",
 ]);
 
-const NEGATIONS = new Set(["NOT", "NO", "NEVER", "NOTHING", "DONT", "DOESNT", "CANT", "WONT"]);
+const NEGATIONS = new Set([
+  "NOT", "NO", "NEVER", "NOTHING", "CANNOT", "DONT", "DOESNT", "DIDNT",
+  "CANT", "WONT", "ISNT", "ARENT", "WASNT", "WERENT", "HASNT", "HAVENT",
+  "HADNT", "COULDNT", "SHOULDNT", "WOULDNT", "MUSTNT", "NEEDNT",
+]);
 
 /** Irregular past tense → (lemma, time marker). */
 const PAST_TENSE: Record<string, string> = {
@@ -63,6 +67,7 @@ function tokenize(text: string): string[] {
   return (
     text
       .toUpperCase()
+      .replace(/[‘’]/g, "'")
       .replace(/[^A-Z0-9'\s-]/g, " ")
       // Expand negative contractions BEFORE apostrophe suffixes are stripped.
       // Without this, "DON'T" loses its "'T" and becomes "DON" — silently
@@ -264,19 +269,36 @@ interface LlmKeys {
   openaiKey?: string | null;
 }
 
+function normalizeLlmGloss(gloss: string, source: string, profile: SignLanguageProfile): string[] | null {
+  const sourceTokens = tokenize(source);
+  const lemmas = tokenize(gloss).map((lemma) =>
+    PRONOUNS[lemma] ?? PAST_TENSE[lemma] ?? (NEGATIONS.has(lemma) ? "NOT" : lemma),
+  );
+  if (!lemmas.length) return null;
+  // An omitted negative changes the meaning and loses its headshake NMM.
+  // Reject the response so the normal rule fallback preserves the clause;
+  // blindly appending NOT could attach it to the wrong model-reordered clause.
+  if (sourceTokens.some((token) => NEGATIONS.has(token)) && !lemmas.includes("NOT")) return null;
+  if (!profile.grammar.timeMarkerFirst) return lemmas;
+  const explicitTime = sourceTokens.filter((token) => TIME_WORDS.has(token));
+  if (explicitTime.some((token) => !lemmas.includes(token))) return null;
+  const isTime = (lemma: string) => TIME_WORDS.has(lemma) || lemma === "FUTURE";
+  return [...lemmas.filter(isTime), ...lemmas.filter((lemma) => !isTime(lemma))];
+}
+
 async function glossWithLlm(
   segments: TranscriptSegment[],
   profile: SignLanguageProfile,
   keys: LlmKeys,
 ): Promise<string[] | null> {
-  const useGroq = !!keys.groqKey;
+  const useGroq = !!keys.groqKey?.trim();
   const apiKey = useGroq ? keys.groqKey : keys.openaiKey;
-  if (!apiKey) return null;
+  if (!apiKey?.trim()) return null;
 
   const endpoint = useGroq
     ? "https://api.groq.com/openai/v1/chat/completions"
     : "https://api.openai.com/v1/chat/completions";
-  const model = useGroq ? "llama-3.1-8b-instant" : "gpt-4o";
+  const model = useGroq ? "openai/gpt-oss-120b" : "gpt-4o";
 
   const numbered = segments.map((s, i) => `${i + 1}. ${s.text}`).join("\n");
 
@@ -284,9 +306,10 @@ async function glossWithLlm(
     const res = await fetch(endpoint, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${apiKey.trim()}`,
         "Content-Type": "application/json",
       },
+      signal: AbortSignal.timeout(15_000),
       body: JSON.stringify({
         model,
         temperature: 0.2,
@@ -305,7 +328,7 @@ async function glossWithLlm(
     });
 
     if (!res.ok) {
-      console.warn(`[gloss] LLM ${res.status}: ${await res.text()}`);
+      console.warn(`[gloss] LLM returned HTTP ${res.status}; using local rules.`);
       return null;
     }
 
@@ -315,8 +338,12 @@ async function glossWithLlm(
 
     const parsed = JSON.parse(content);
     const arr = Array.isArray(parsed.gloss) ? parsed.gloss : null;
-    if (!arr || arr.length !== segments.length) return null;
-    return arr.map((s: unknown) => String(s).toUpperCase().trim());
+    if (!arr || arr.length !== segments.length || arr.some((s: unknown) => typeof s !== "string" || !s.trim())) return null;
+    // Preserve model ordering within the clause, enforce profile time-fronting,
+    // and keep the existing, honestly reported rule fallback for meaning loss.
+    const normalized = arr.map((gloss: string, index: number) => normalizeLlmGloss(gloss, segments[index].text, profile));
+    if (normalized.some((lemmas: string[] | null) => !lemmas)) return null;
+    return normalized.map((lemmas: string[]) => lemmas.join(" "));
   } catch (err) {
     console.warn("[gloss] LLM path failed, falling back to rules:", err);
     return null;

@@ -61,3 +61,6 @@ tests/.build
 
 # local logs
 /logs/
+
+# Verified native downloader, regenerated during build
+/vendor/youtube/

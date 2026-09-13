@@ -1,9 +1,9 @@
-const BASE = "http://localhost:3111";
+const BASE = (process.env.API_BASE_URL || "http://localhost:3111").replace(/\/$/, "");
 let pass = 0, fail = 0; const fails = [];
 const check = (n, c, d) => { if (c) pass++; else { fail++; fails.push(`${n}${d ? " :: " + d : ""}`); } };
 
 async function req(path, opts = {}) {
-  const res = await fetch(BASE + path, opts);
+  const res = await fetch(BASE + path, { signal: AbortSignal.timeout(60_000), ...opts });
   let body = null;
   try { body = await res.json(); } catch { body = null; }
   return { status: res.status, body };
@@ -69,6 +69,24 @@ const SEGS = [{ start: 0, end: 3, text: "I dont want pizza." }];
     ["empty glossRows", "/api/sigml", { glossRows: [] }],
     ["gloss missing segments", "/api/gloss", {}],
     ["gloss bad lang", "/api/gloss", { segments: SEGS, lang: "XX" }],
+    ["translate JSON null", "/api/translate", null],
+    ["gloss JSON null", "/api/gloss", null],
+    ["sigml JSON null", "/api/sigml", null],
+    ["translate language object", "/api/translate", { segments: SEGS, lang: {} }],
+    ["gloss language number", "/api/gloss", { segments: SEGS, lang: 3 }],
+    ["translate bad duration", "/api/translate", { segments: SEGS, duration: "invalid" }],
+    ["sigml null row", "/api/sigml", { glossRows: [null] }],
+    ["sigml incomplete row", "/api/sigml", { glossRows: [{ gloss: "WATER" }] }],
+    ["sigml inverted times", "/api/sigml", { glossRows: [{ gloss: "WATER", startTime: 5, endTime: 1 }] }],
+    ["sigml malformed markers", "/api/sigml", { glossRows: [{ gloss: "WATER", startTime: 0, endTime: 2, nmm: [null] }] }],
+    ["sigml malformed prosody", "/api/sigml", { glossRows: gl.body.glossRows, prosody: [null] }],
+    ["sigml bad duration", "/api/sigml", { glossRows: gl.body.glossRows, duration: -1 }],
+    ["process JSON null", "/api/process-video", null],
+    ["process URL number", "/api/process-video", { url: 123 }],
+    ["process invalid JSON", "/api/process-video", "{bad"],
+    ["process invalid hostname", "/api/process-video", { url: "https://evil.test/youtube.com/watch?v=dQw4w9WgXcQ" }],
+    ["transcribe missing upload", "/api/transcribe", {}],
+    ["ingest missing media", "/api/ingest", {}],
   ];
   for (const [label, path, body] of errCases) {
     const r = await post(path, body);
@@ -152,8 +170,48 @@ const SEGS = [{ start: 0, end: 3, text: "I dont want pizza." }];
   check("200-segment produces plan", perf.body?.plan?.items?.length > 0);
 
   console.log("\n" + "=".repeat(70));
+  console.log("F. MEDIA CONTRACTS — no fabricated success");
+  console.log("=".repeat(70));
+  const missingJob = await req("/api/status/does-not-exist");
+  check("unknown job is 404", missingJob.status === 404 && missingJob.body?.error);
+  for (const path of ["/api/process-video", "/api/transcribe"]) {
+    const textFile = new FormData();
+    textFile.append("file", "not an uploaded file");
+    const badFile = await req(path, { method: "POST", body: textFile });
+    check(`${path} rejects text in file field`, badFile.status === 400);
+    const emptyFile = new FormData();
+    emptyFile.append("file", new Blob([]), "empty.wav");
+    const empty = await req(path, { method: "POST", body: emptyFile });
+    check(`${path} rejects empty file`, empty.status === 400);
+    if (!process.env.API_HAS_TRANSCRIPTION_KEY) {
+      const media = new FormData();
+      media.append("file", new Blob(["uploaded audio"], { type: "audio/wav" }), "speech.wav");
+      const absentKey = await req(path, { method: "POST", body: media });
+      check(`${path} absent key actionable 422`, absentKey.status === 422 && /key/i.test(absentKey.body?.error));
+      check(`${path} absent key never fabricates a transcript`, !absentKey.body?.segments && !absentKey.body?.success);
+    }
+  }
+  const invalidMedia = new FormData();
+  invalidMedia.append("file", new Blob(["not a valid media container"], { type: "video/mp4" }), "broken.mp4");
+  const corrupt = await req("/api/process-video", { method: "POST", headers: { "x-groq-api-key": "test-key-not-sent-because-media-is-invalid" }, body: invalidMedia });
+  check("corrupt media returns actionable 422", corrupt.status === 422 && /Audio could not be read/.test(corrupt.body?.error));
+  console.log(`  unknown job=${missingJob.status}, corrupt media=${corrupt.status}; empty/malformed/no-key uploads checked`);
+
+  const supportedNoNmm = await post("/api/sigml", { glossRows: [{ startTime: 0, endTime: 2, gloss: "GO WATER" }], lang: "ASL" });
+  check("valid minimal gloss rows render", supportedNoNmm.status === 200 && supportedNoNmm.body?.plan?.items?.length === 2);
+  check("minimal row produces finite duration", supportedNoNmm.body?.plan?.duration === 2);
+
+  if (process.env.API_TEST_YOUTUBE) {
+    const youtube = await post("/api/process-video", { url: "https://www.youtube.com/watch?v=jNQXAC9IVRw" });
+    check("real YouTube captions fetched", youtube.status === 200 && youtube.body?.segments?.length > 0);
+    check("real YouTube transcript matches source", /elephants/i.test(youtube.body?.text));
+    check("captions decode XML entities", !/&#\d+;/.test(youtube.body?.text));
+    console.log(`  Live YouTube: ${youtube.status}, ${youtube.body?.segments?.length ?? 0} segments, provider=${youtube.body?.metadata?.provider ?? youtube.body?.error}`);
+  }
+
+  console.log("\n" + "=".repeat(70));
   console.log(`API RESULT: ${pass} passed, ${fail} failed`);
   if (fails.length) { console.log("\nFAILURES:"); fails.forEach(f => console.log("  ✗ " + f)); }
   console.log("=".repeat(70));
   if (fail) process.exitCode = 1;
-})();
+})().catch((error) => { console.error(error); process.exitCode = 1; });

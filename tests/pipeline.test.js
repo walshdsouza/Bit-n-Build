@@ -1,11 +1,10 @@
 const B = __dirname + "/.build/lib";
-const { glossByRules, generateGloss, deriveNMM } = require(B + "/gloss-engine.js");
+const { glossByRules, generateGloss } = require(B + "/gloss-engine.js");
 const { getProfile } = require(B + "/sign-languages.js");
 const { buildSignPlan, signAt } = require(B + "/sign-plan.js");
-const { buildSigmlDocument } = require(B + "/sigml.js");
 const { encodeHamNoSys, estimateSignDuration } = require(B + "/hamnosys.js");
 const { analyzeProsody } = require(B + "/prosody.js");
-const { lookupSign, buildFingerspelling, dictionaryStats } = require(B + "/dictionaries/index.js");
+const { buildFingerspelling, dictionaryStats } = require(B + "/dictionaries/index.js");
 const { solvePose, lerpPose, restPose } = require(B + "/avatar/pose-solver.js");
 
 let pass = 0, fail = 0;

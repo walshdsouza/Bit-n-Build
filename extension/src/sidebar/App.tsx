@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { startTabAudioCapture, type CaptureHandle } from "../pipeline/captureAudio";
 import { transcribeChunk } from "../pipeline/liveTranslate";
 import { getSettings } from "../pipeline/storage";
@@ -7,6 +7,18 @@ import { generateGloss } from "../../../lib/gloss-engine";
 import { buildSignPlan } from "../../../lib/sign-plan";
 import { analyzeProsody } from "../../../lib/prosody";
 import type { SignLanguageCode, SignPlan, TranscriptSegment } from "../../../lib/types";
+
+/** Transcript → gloss → motion plan, entirely in-process. */
+async function buildTranscriptPlan(segments: TranscriptSegment[], lang: SignLanguageCode) {
+  const { groqApiKey, openaiApiKey } = await getSettings();
+  const prosody = analyzeProsody(segments);
+  const { rows } = await generateGloss(segments, {
+    lang,
+    groqKey: groqApiKey ?? null,
+    openaiKey: openaiApiKey ?? null,
+  });
+  return buildSignPlan(rows, { lang, prosody });
+}
 
 /**
  * The extension is standalone: there is no GestureSync server behind it. Every
@@ -37,29 +49,16 @@ export function App() {
     });
   }, []);
 
-  /** Transcript → gloss → motion plan, entirely in-process. */
-  const rebuildPlan = useCallback(
-    async (segs: TranscriptSegment[], target: SignLanguageCode) => {
-      if (!segs.length) return;
-      try {
-        const { groqApiKey, openaiApiKey } = await getSettings();
-        const prosody = analyzeProsody(segs);
-        const { rows } = await generateGloss(segs, {
-          lang: target,
-          groqKey: groqApiKey ?? null,
-          openaiKey: openaiApiKey ?? null,
-        });
-        setPlan(buildSignPlan(rows, { lang: target, prosody }));
-      } catch (err) {
-        setError(`Could not build the sign plan: ${String(err)}`);
-      }
-    },
-    [],
-  );
-
   useEffect(() => {
-    rebuildPlan(segments, lang);
-  }, [segments, lang, rebuildPlan]);
+    if (!segments.length) return;
+    let cancelled = false;
+    buildTranscriptPlan(segments, lang).then((nextPlan) => {
+      if (!cancelled) setPlan(nextPlan);
+    }).catch((err: unknown) => {
+      if (!cancelled) setError(`Could not build the sign plan: ${String(err)}`);
+    });
+    return () => { cancelled = true; };
+  }, [segments, lang]);
 
   // Drive the avatar clock while capturing, anchored to wall time so it cannot
   // drift with the frame rate.

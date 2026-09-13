@@ -23,8 +23,8 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
-import { SignPlan, SignPlanItem } from "@/lib/types";
-import { AvatarPose, lerpPose, restPose, solvePose } from "@/lib/avatar/pose-solver";
+import { SignPlan } from "@/lib/types";
+import { sampleMotion, secondaryMotion } from "@/lib/avatar/motion-timeline";
 import { applyNexaPose, NexaSkeleton, readNexaSkeleton } from "./avatar/nexaRig";
 
 interface NexaAvatarProps {
@@ -35,6 +35,8 @@ interface NexaAvatarProps {
   fullBody?: boolean;
   /** Called if the model cannot be loaded, so the caller can fall back. */
   onError?: (message: string) => void;
+  /** Lets live playback wait until the signing skeleton can actually render. */
+  onReady?: (ready: boolean) => void;
   /**
    * Where to fetch the GLB. The web app serves it from /public; the browser
    * extension has no server, so it passes a browser.runtime.getURL() path.
@@ -43,23 +45,19 @@ interface NexaAvatarProps {
 }
 
 const VIEWS = {
-  signing: { y: 1.30, targetY: 1.24, dist: 1.55 },
-  full: { y: 1.00, targetY: 0.86, dist: 3.05 },
+  signing: { y: 1.22, targetY: 1.22, dist: 2.24, width: 1.15 },
+  full: { y: 0.90, targetY: 0.88, dist: 3.62, width: 1.2 },
 } as const;
 
-function activeSign(
-  plan: SignPlan | null,
-  t: number,
-): { item: SignPlanItem | null; progress: number } {
-  if (!plan?.items.length) return { item: null, progress: 0 };
-  for (const it of plan.items) {
-    if (t >= it.startTime && t < it.endTime) {
-      const span = Math.max(it.endTime - it.startTime, 1e-3);
-      return { item: it, progress: (t - it.startTime) / span };
-    }
-  }
-  return { item: null, progress: 0 };
+function frameCamera(camera: THREE.PerspectiveCamera, view: keyof typeof VIEWS) {
+  const frame = VIEWS[view];
+  // Fit both vertical body range and horizontal hand workspace, including
+  // narrow split panes. The face stays readable without cropping the hands.
+  const distance = Math.max(frame.dist, frame.width / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect));
+  camera.position.set(0, frame.y, distance);
+  camera.lookAt(0, frame.targetY, 0);
 }
+
 
 export default function NexaAvatar({
   plan,
@@ -68,12 +66,15 @@ export default function NexaAvatar({
   label,
   fullBody = false,
   onError,
+  onReady,
   modelUrl = "/models/nexa.glb",
 }: NexaAvatarProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef({ plan, currentTime, playing });
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const viewRef = useRef<keyof typeof VIEWS>(fullBody ? "full" : "signing");
   const errorRef = useRef(onError);
+  const readinessRef = useRef(onReady);
 
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
@@ -90,11 +91,14 @@ export default function NexaAvatar({
   }, [onError]);
 
   useEffect(() => {
+    readinessRef.current = onReady;
+  }, [onReady]);
+
+  useEffect(() => {
     const cam = cameraRef.current;
     if (!cam) return;
-    const v = VIEWS[view];
-    cam.position.set(0, v.y, v.dist);
-    cam.lookAt(0, v.targetY, 0);
+    viewRef.current = view;
+    frameCamera(cam, view);
   }, [view, ready]);
 
   useEffect(() => {
@@ -102,6 +106,10 @@ export default function NexaAvatar({
     if (!mount) return;
 
     let disposed = false;
+    readinessRef.current?.(false);
+    queueMicrotask(() => {
+      if (!disposed) { setReady(false); setFailed(null); }
+    });
     const scene = new THREE.Scene();
 
     const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
@@ -110,9 +118,13 @@ export default function NexaAvatar({
     camera.lookAt(0, v0.targetY, 0);
     cameraRef.current = camera;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+    const context = renderer.getContext();
+    const debugRenderer = context.getExtension("WEBGL_debug_renderer_info");
+    const gpuName = debugRenderer ? String(context.getParameter(debugRenderer.UNMASKED_RENDERER_WEBGL)) : "";
+    let usePostProcessing = !/swiftshader|llvmpipe|software|basic render/i.test(gpuName);
+    renderer.setPixelRatio(usePostProcessing ? Math.min(window.devicePixelRatio, 1.5) : 1);
+    renderer.shadowMap.enabled = usePostProcessing;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
@@ -130,7 +142,7 @@ export default function NexaAvatar({
     const key = new THREE.DirectionalLight(0xfff4e8, 1.9);
     key.position.set(1.5, 2.8, 2.3);
     key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.mapSize.set(1024, 1024);
     key.shadow.camera.near = 0.5;
     key.shadow.camera.far = 8;
     key.shadow.camera.left = -1.2;
@@ -180,7 +192,7 @@ export default function NexaAvatar({
 
     const composer = new EffectComposer(
       renderer,
-      new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 2 }),
+      new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 0 }),
     );
     composer.addPass(new RenderPass(scene, camera));
     // Threshold above lit white shell, below the emissive LED trim.
@@ -214,6 +226,7 @@ export default function NexaAvatar({
     renderer.domElement.addEventListener("pointerdown", onDown);
     renderer.domElement.addEventListener("pointermove", onMove);
     renderer.domElement.addEventListener("pointerup", onUp);
+    renderer.domElement.addEventListener("pointercancel", onUp);
 
     const resize = () => {
       const w = mount.clientWidth || 1;
@@ -223,6 +236,7 @@ export default function NexaAvatar({
       bloom.setSize(w, h);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
+      frameCamera(camera, viewRef.current);
     };
     resize();
     const ro = new ResizeObserver(resize);
@@ -231,41 +245,30 @@ export default function NexaAvatar({
     let raf = 0;
     let skeleton: NexaSkeleton | null = null;
     let model: THREE.Object3D | null = null;
-    let current: AvatarPose = restPose();
     let frames = 0;
     let fpsClock = performance.now();
     let lastGloss = "";
-    let nextBlink = performance.now() + 2200;
-    let blinkUntil = 0;
-    const clock = new THREE.Clock();
+    const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let idleTime = 0;
+    let lastFrame = performance.now();
 
     const tick = () => {
       raf = requestAnimationFrame(tick);
-      const dt = Math.min(clock.getDelta(), 0.1);
       const now = performance.now();
-      const { plan: p, currentTime: t, playing: isPlaying } = stateRef.current;
+      const { plan: p, currentTime: t } = stateRef.current;
 
       if (skeleton) {
-        const { item, progress } = activeSign(p, t);
-        const target = solvePose(item, progress);
-
-        const k = Math.min(1, dt * (isPlaying ? 14 : 8));
-        current = lerpPose(current, target, k);
-
-        if (now > nextBlink) {
-          blinkUntil = now + 130;
-          nextBlink = now + 2400 + Math.random() * 3200;
-        }
-        const blink =
-          now < blinkUntil ? Math.sin(((blinkUntil - now) / 130) * Math.PI) : 0;
-
-        applyNexaPose(skeleton, current, blink);
-
+        const { item, pose } = sampleMotion(p, t);
+        const dt = Math.min((now - lastFrame) / 1000, 0.1);
+        lastFrame = now;
+        if (!p) idleTime += dt;
+        const ambient = secondaryMotion(p ? t : idleTime, motionPreference.matches);
         if (model) {
-          const breathe = Math.sin(now * 0.0011) * 0.005;
-          model.position.y = item ? breathe * 0.35 : breathe;
-          model.rotation.y = yaw + (item ? 0 : Math.sin(now * 0.0004) * 0.03);
+          // Keep feet planted; breathing lives in the chest, not root bobbing.
+          model.position.y = 0;
+          model.rotation.y = yaw + ambient.sway * (item ? 0.25 : 1);
         }
+        applyNexaPose(skeleton, pose, ambient.blink, ambient.breath);
 
         const gloss = item?.fingerspell ?? item?.gloss ?? "—";
         if (gloss !== lastGloss) {
@@ -274,11 +277,21 @@ export default function NexaAvatar({
         }
       }
 
-      composer.render();
+      if (usePostProcessing) composer.render();
+      else renderer.render(scene, camera);
 
       frames++;
       if (now - fpsClock >= 1000) {
-        setFps(Math.round((frames * 1000) / (now - fpsClock)));
+        const measuredFps = Math.round((frames * 1000) / (now - fpsClock));
+        setFps(measuredFps);
+        // Prefer responsive, readable signing to decorative bloom on a slow
+        // GPU. Never change the media clock or skip articulation to catch up.
+        if (usePostProcessing && measuredFps < 24) {
+          usePostProcessing = false;
+          renderer.setPixelRatio(1);
+          renderer.shadowMap.enabled = false;
+          resize();
+        }
         frames = 0;
         fpsClock = now;
       }
@@ -300,9 +313,11 @@ export default function NexaAvatar({
         try {
           skeleton = readNexaSkeleton(model);
           setReady(true);
+          readinessRef.current?.(true);
         } catch (e) {
           const msg = e instanceof Error ? e.message : "NEXA rig could not be read";
           setFailed(msg);
+          readinessRef.current?.(false);
           errorRef.current?.(msg);
         }
       },
@@ -312,6 +327,7 @@ export default function NexaAvatar({
         const msg =
           e instanceof Error ? e.message : `Failed to load ${modelUrl}`;
         setFailed(msg);
+        readinessRef.current?.(false);
         errorRef.current?.(msg);
       },
     );
@@ -320,11 +336,13 @@ export default function NexaAvatar({
 
     return () => {
       disposed = true;
+      readinessRef.current?.(false);
       cancelAnimationFrame(raf);
       ro.disconnect();
       renderer.domElement.removeEventListener("pointerdown", onDown);
       renderer.domElement.removeEventListener("pointermove", onMove);
       renderer.domElement.removeEventListener("pointerup", onUp);
+      renderer.domElement.removeEventListener("pointercancel", onUp);
 
       if (model) {
         model.traverse((o) => {

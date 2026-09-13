@@ -14,12 +14,14 @@ function ensureAudioGraph() {
 }
 
 function patchRTCPeerConnection() {
-  const NativePC = window.RTCPeerConnection;
-  if (!NativePC || (NativePC as any).__gesturesyncPatched) return;
+  const NativePC = window.RTCPeerConnection as typeof RTCPeerConnection & {
+    __gesturesyncPatched?: boolean;
+  };
+  if (!NativePC || NativePC.__gesturesyncPatched) return;
 
   const Patched = new Proxy(NativePC, {
-    construct(target, args) {
-      const pc: RTCPeerConnection = new (target as any)(...args);
+    construct(target, args, newTarget) {
+      const pc = Reflect.construct(target, args, newTarget) as RTCPeerConnection;
       pc.addEventListener("track", (event: RTCTrackEvent) => {
         const track = event.track;
         if (track.kind !== "audio" || connectedTrackIds.has(track.id)) return;
@@ -38,8 +40,8 @@ function patchRTCPeerConnection() {
       return pc;
     },
   });
-  (Patched as any).__gesturesyncPatched = true;
-  window.RTCPeerConnection = Patched as unknown as typeof RTCPeerConnection;
+  Patched.__gesturesyncPatched = true;
+  window.RTCPeerConnection = Patched;
 }
 
 function startRecording() {

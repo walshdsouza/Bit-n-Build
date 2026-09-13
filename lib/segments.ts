@@ -11,7 +11,8 @@
 import { TranscriptSegment } from "./types";
 
 function toFiniteNumber(value: unknown, fallback: number): number {
-  const n = typeof value === "number" ? value : Number(value);
+  const n = typeof value === "number" ? value :
+    typeof value === "string" && value.trim() ? Number(value) : NaN;
   return Number.isFinite(n) ? n : fallback;
 }
 

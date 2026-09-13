@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
 const { execSync } = require('child_process');
 
 const DATA_DIR = path.join(__dirname, '..', 'data', 'datasets');
