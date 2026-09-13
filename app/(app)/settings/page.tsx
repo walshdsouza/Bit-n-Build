@@ -1,20 +1,7 @@
-"use client";
-import { useState } from "react";
 import SettingsNav from "@/components/settings/SettingsNav";
 import ProfileSection from "@/components/settings/ProfileSection";
-import ApiKeysSection from "@/components/settings/ApiKeysSection";
 
 export default function SettingsPage() {
-  const [active, setActive] = useState("profile");
-
-  const renderSection = () => {
-    switch (active) {
-      case "profile": return <ProfileSection />;
-      case "apikeys": return <ApiKeysSection />;
-      default: return null;
-    }
-  };
-
   return (
     <div className="p-4 sm:p-6 max-w-[900px] mx-auto">
       <div className="mb-space-lg">
@@ -25,9 +12,9 @@ export default function SettingsPage() {
       </div>
 
       <div className="flex flex-col md:flex-row gap-space-lg">
-        <SettingsNav active={active} onSelect={setActive} />
+        <SettingsNav />
         <div className="flex-1 min-w-0 bg-surface-container rounded-xl border border-outline-variant/40 p-4 sm:p-6">
-          {renderSection()}
+          <ProfileSection />
         </div>
       </div>
     </div>

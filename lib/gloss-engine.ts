@@ -15,6 +15,7 @@
 
 import { GlossRow, NMMTag, SignLanguageCode, TranscriptSegment } from "./types";
 import { buildGlossSystemPrompt, getProfile, SignLanguageProfile } from "./sign-languages";
+import { translateTranscriptToEnglish } from "./transcript-translation";
 
 /* ---------------------------------------------------------------- *
  * Lexical resources for the rule-based path
@@ -367,10 +368,17 @@ export async function generateGloss(
   opts: GlossOptions,
 ): Promise<{ rows: GlossRow[]; engine: "llm" | "rules" }> {
   const profile = getProfile(opts.lang);
+  // Older saved transcripts or API callers may still supply source-language
+  // captions. Translate them before the English-only rule fallback can erase
+  // their letters; missing translation credentials must fail explicitly.
+  const englishSegments = await translateTranscriptToEnglish(segments, {
+    groqKey: opts.rulesOnly ? undefined : opts.groqKey,
+    openaiKey: opts.rulesOnly ? undefined : opts.openaiKey,
+  });
 
   let llmGloss: string[] | null = null;
   if (!opts.rulesOnly && segments.length) {
-    llmGloss = await glossWithLlm(segments, profile, {
+    llmGloss = await glossWithLlm(englishSegments, profile, {
       groqKey: opts.groqKey,
       openaiKey: opts.openaiKey,
     });
@@ -379,14 +387,14 @@ export async function generateGloss(
   const rows: GlossRow[] = segments.map((seg, i) => {
     const lemmas = llmGloss
       ? llmGloss[i].split(/\s+/).filter(Boolean)
-      : glossByRules(seg.text, profile);
+      : glossByRules(englishSegments[i].text, profile);
 
     return {
       startTime: seg.start,
       endTime: seg.end,
       sourceText: seg.text,
       gloss: lemmas.join(" "),
-      nmm: deriveNMM(seg.text, lemmas, profile, seg.start),
+      nmm: deriveNMM(englishSegments[i].text, lemmas, profile, seg.start),
       status: "queued",
       lang: profile.code,
     };

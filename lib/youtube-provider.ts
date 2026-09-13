@@ -40,7 +40,7 @@ function openJob(token: string, videoId: string, key: string) {
 
 function providerError(status: number, data?: Record<string, unknown>): RequestError {
   const code = data?.error;
-  if (status === 401 || code === 'unauthorized') return new RequestError('The YouTube import API key was rejected. Update the Supadata key in Settings.', 422, 'YOUTUBE_KEY_REJECTED');
+  if (status === 401 || code === 'unauthorized') return new RequestError('The YouTube import service is unavailable. Please contact the site owner.', 422, 'YOUTUBE_KEY_REJECTED');
   if (status === 402 || code === 'upgrade-required') return new RequestError('This YouTube import requires a feature unavailable on your Supadata plan. Check your plan or choose a video with existing captions.', 422, 'YOUTUBE_PLAN_REQUIRED');
   if (status === 429 || code === 'limit-exceeded') return new RequestError('The YouTube import service has reached its request or credit limit. Check your Supadata account and retry.', 429, 'YOUTUBE_PROVIDER_LIMIT');
   if (status === 403 || status === 404 || code === 'forbidden' || code === 'not-found' || code === 'video-unavailable') return new RequestError('This video is unavailable or requires sign-in. Choose a public video you can play.', 422, 'YOUTUBE_VIDEO_UNAVAILABLE');
@@ -70,7 +70,7 @@ export function parseProviderTranscript(data: Record<string, unknown>): Transcri
 export async function readProviderYouTube(videoId: string, rawKey: string, jobToken?: string): Promise<YouTubeProviderResult> {
   if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId)) throw new RequestError('Provide a valid YouTube URL.');
   const key = rawKey.trim();
-  if (!key || /\s/.test(key)) throw new RequestError('Configure the YouTube import key in Settings.', 422, 'YOUTUBE_NOT_CONFIGURED');
+  if (!key || /\s/.test(key)) throw new RequestError('YouTube import is not configured on this server. Please contact the site owner.', 422, 'YOUTUBE_NOT_CONFIGURED');
   const jobId = jobToken ? openJob(jobToken, videoId, key) : null;
   const endpoint = jobId ? `${ENDPOINT}/${encodeURIComponent(jobId)}` : `${ENDPOINT}?${new URLSearchParams({
     url: `https://www.youtube.com/watch?v=${videoId}`, lang: 'en', text: 'false', mode: 'auto',
@@ -99,10 +99,7 @@ export async function readProviderYouTube(videoId: string, rawKey: string, jobTo
   // JobResult<Transcript> also supports a completed result envelope.
   const transcript = jobId && data.status === 'completed' && isRecord(data.result) ? data.result : data;
   const language = typeof transcript.lang === 'string' ? transcript.lang : undefined;
-  // lang=en is a preference, not translation: Supadata can return the first
-  // available language, and generated transcripts retain the spoken language.
-  if (language && !/^en(?:[-_]|$)/i.test(language)) {
-    throw new RequestError('This video has no English transcript available. Choose English captions or upload English audio for ASL translation.', 422, 'YOUTUBE_LANGUAGE_UNSUPPORTED');
-  }
+  // lang=en is only a preference. Preserve Hindi/other native or generated
+  // captions for the ingestion layer to translate before creating ASL gloss.
   return { segments: parseProviderTranscript(transcript), language };
 }

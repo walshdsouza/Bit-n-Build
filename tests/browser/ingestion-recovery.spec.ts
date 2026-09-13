@@ -2,19 +2,19 @@ import { test, expect } from "@playwright/test";
 
 const sourceUrl = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
 
-test("dashboard reports the configured deployment transcription provider", async ({ page }) => {
+test("dashboard reports whether transcription is available without exposing provider setup", async ({ page }) => {
   // Set to groq, openai, or none for the server under test; no credentials are needed by this test.
   const provider = process.env.UI_TEST_SERVER_PROVIDER;
   test.skip(!provider, "Set UI_TEST_SERVER_PROVIDER to assert the expected server configuration.");
   await page.goto("/dashboard");
   if (provider === "none") {
-    await expect(page.getByText("Add a Groq or OpenAI API key in Settings to transcribe audio", { exact: true })).toBeVisible();
+    await expect(page.getByText("Audio transcription is currently unavailable. Please try again later.", { exact: true })).toBeVisible();
   } else {
-    const name = provider === "groq" ? "Groq" : "OpenAI";
-    await expect(page.getByText(`${name} configured on this deployment; no personal key needed`, { exact: true })).toBeVisible();
-    await expect(page.getByText(`${name} transcription is configured on this deployment. You do not need to add an API key.`, { exact: true })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Configure API keys" })).toHaveCount(0);
+    await expect(page.getByText("Converts speech into English captions", { exact: true })).toBeVisible();
+    await expect(page.getByText("Audio transcription is ready.", { exact: true })).toBeVisible();
   }
+  await expect(page.getByRole("link", { name: "Configure API keys" })).toHaveCount(0);
+  await expect(page.getByText(/Groq|OpenAI|API key/i)).toHaveCount(0);
 });
 
 test("failed YouTube imports preserve the URL, display the API error and retry the same source", async ({ page }) => {

@@ -5,3 +5,4 @@ docs/
 playwright.config.ts
 tsconfig.tsbuildinfo
 vendor/youtube/
+*.pptx

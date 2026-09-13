@@ -6,7 +6,6 @@ import SplitViewport from "@/components/player/SplitViewport";
 import Timeline from "@/components/player/Timeline";
 import GlossInspector from "@/components/player/GlossInspector";
 import { GlossRow, SignLanguageCode, SignPlan, TranscriptSegment } from "@/lib/types";
-import { getApiKeyHeaders } from "@/lib/client-api-keys";
 import { getLocalProject, saveLocalProject } from "@/lib/local-projects";
 
 /** A transcript segment plus the identity it needs to be written back. */
@@ -45,6 +44,8 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
   const [mediaDuration, setDuration] = useState(0);
   const mediaDurationRef = useRef(0);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [muted, setMuted] = useState(false);
+  const [audioReady, setAudioReady] = useState(false);
   const [seekRequest, setSeekRequest] = useState({ time: 0, revision: 0 });
   const playerRef = useRef<HTMLDivElement>(null);
 
@@ -170,6 +171,7 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
       setSaveNote(null);
       setSaving(false);
       setHasMedia(false);
+      setAudioReady(false);
       setDuration(0);
       setPlanDuration(0);
       setCurrentTime(0);
@@ -251,7 +253,16 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
 
         if (cancelled) return;
 
-        if (projData) setProject(projData as ProjectRow);
+        if (projData) {
+          // A cloud transcript can save even when its video upload does not.
+          // Preserve the freshly uploaded local preview for this same project.
+          const handoff = fromSession();
+          setProject({
+            ...projData as ProjectRow,
+            source_url: projData.source_url || handoff.project.source_url,
+            source_type: projData.source_type || handoff.project.source_type,
+          });
+        }
 
         if (segData?.length) {
           setSegments(
@@ -315,7 +326,7 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
       try {
         const res = await fetch("/api/translate", {
           method: "POST",
-          headers: { "Content-Type": "application/json", ...getApiKeyHeaders() },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             segments: payload,
             lang: target,
@@ -477,7 +488,7 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
   }
 
   return (
-    <div ref={playerRef} className="flex flex-col h-[calc(100dvh-3.5rem)] min-h-[560px] bg-[#060a0f]">
+    <div ref={playerRef} className="flex flex-col h-[calc(100dvh-3.5rem)] min-h-[720px] md:min-h-[560px] bg-[#060a0f]">
       {/* Player nav */}
       <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 border-b border-outline-variant/30 bg-surface-container-lowest flex-shrink-0">
         <Link
@@ -492,7 +503,7 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
             {project?.title ?? `Translation #${id}`}
           </p>
           <p className="text-xs text-on-surface-variant">
-            {duration > 0 ? `${Math.round(duration)}s` : "0:28"} · English → {lang}
+            {duration > 0 ? `${Math.round(duration)}s` : "0:28"} · {lang} translation
             {translating && " · translating…"}
             {saveNote && <span role="status" className="text-primary"> · {saveNote}</span>}
             {error && <span className="text-error"> · {error}</span>}
@@ -552,11 +563,14 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
             currentTime={currentTime}
             onTimeUpdate={handleMediaTime}
             onDurationChange={handleMediaDuration}
-            onPlayPause={togglePlayback}
+            onPlayingChange={setPlaying}
             onMediaAvailability={setHasMedia}
             onEnded={handleEnded}
             onPlaybackRateChange={setPlaybackRate}
             playbackRate={playbackRate}
+            muted={muted}
+            onMutedChange={setMuted}
+            onAudioAvailability={setAudioReady}
             seekRequest={seekRequest}
             segments={segments}
             plan={plan}
@@ -568,6 +582,10 @@ export default function PlayerPage({ params }: { params: Promise<{ id: string }>
             onPlayPause={togglePlayback}
             disabled={!plan || translating}
             playbackRate={playbackRate}
+            muted={muted}
+            audioReady={audioReady}
+            hasSourceAudio={Boolean(project?.source_url && ["youtube", "file", "upload"].includes(project?.source_type ?? ""))}
+            onToggleMute={() => setMuted(value => !value)}
             onPlaybackRateChange={setPlaybackRate}
             onFullscreen={() => {
               const operation = document.fullscreenElement ? document.exitFullscreen() : playerRef.current?.requestFullscreen();

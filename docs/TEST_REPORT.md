@@ -6,6 +6,19 @@ Public application: https://unmute-ai.vercel.app
 Vercel project: `unmute` (same project ID and production credentials as the original deployment).
 The requested `unmute.vercel.app` alias was already taken; `unmute-ai.vercel.app` was successfully assigned.
 
+## Player, Hindi import, Settings and Meet widget update
+
+This update supersedes the earlier notes about removing mute controls, personal website API keys, and rejecting non-English transcripts.
+
+- The source video uses more of its pane. A blue played track, bottom Mute/Unmute button and native MP4 controls share state with the avatar timeline. Native MP4 play, pause, seeking, arbitrary supported speed and mute were exercised with an actual H.264/AAC file in Edge. YouTube command delays and rapid mute reversals have controlled browser coverage.
+- Settings has one Profile section with Name and Email. API-key views, redundant sections and website key forwarding were removed. The New Translation header action uses a solid background and ordinary hover/focus states.
+- The exact Hindi source `OIipC9LicMU` returned 826 timed captions from Supadata. All 826 were translated to English using real Groq requests with original timestamps retained. Quota delays and incomplete model responses were encountered and recovered through saved, signed continuations and a bounded Groq model fallback. A separate forced Supadata generation request on a short public video passed, verifying the audio-generation path in addition to caption retrieval.
+- Those 826 English captions generated 826 gloss rows and 19,074 finite, positively timed signs locally. Dense speech and fingerspelling extend the signing plan to approximately 70 minutes for this 45-minute source. This is evidence of successful ingestion and plan generation, not a claim of exact full-video sign/audio synchronization or certified linguistic accuracy.
+- Translation continuation tests cover progress reuse, expiry, tampering, video identity, empty signing keys, cancellation and provider backoff. Longer quota delays preserve progress and tell the user when to retry instead of repeatedly polling the provider.
+- The Firefox extension now includes an in-page Meet widget with NEXA, recent captions, drag/resize, minimize and hide/reopen. The widget and sidebar share one existing recorder. It captures incoming participant audio, not the user's microphone. Website credentials are not bundled into the extension.
+
+The production Next.js build and full ESLint check passed. The complete unit suite passed, including 46 text-translation and 21 continuation assertions. All 37 affected Edge browser cases passed: player controls, actual MP4 playback, native-media clocks, saved tracks, YouTube jobs, Settings/branding, import recovery and upload handoff. Small 320/375 px layouts allow normal vertical scrolling without clipping the avatar or overflowing horizontally. Browser media tests use an explicit rule-engine fixture to avoid consuming production Groq quota; provider transcription itself is validated separately with real requests. A real signed-in Supabase account and an actual Firefox Google Meet call were not exercised in this update.
+
 ## Changes verified locally
 
 - Playback speeds 0.5×, 1×, 1.5× and 2× change actual native-media elapsed time and keep the avatar playhead synchronized. The media-free avatar clock also advances at 2×. Unsupported YouTube rates report the actual rate instead of leaving a false selection.

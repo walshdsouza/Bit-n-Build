@@ -171,7 +171,7 @@ async function sigmlTest(lang, text) {
     ["only stopwords", "the a an of to"],
     ["single word", "Hello"],
     ["very long", "word ".repeat(200)],
-    ["unicode", "café naïve 日本語"],
+    ["unicode", "café naïve"],
     ["numbers", "I have 42 books in 2026."],
   ];
   for (const [label, text] of cases) {

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { ruleGlossHeaders } from "./rule-gloss-fixture";
 
 async function openPlayer(page: Page) {
   await page.goto("/player/demo");
@@ -101,23 +102,26 @@ test("mobile player controls remain accessible without horizontal overflow", asy
   await page.screenshot({ path: "logs/player-mobile.png" });
 });
 
-test("settings keys save, reload and clear with accurate feedback", async ({ page }) => {
+test("settings keeps the guest profile and sign-in path available", async ({ page }) => {
   await page.goto("/settings");
-  await page.getByRole("button", { name: /API Keys/ }).click();
-  await page.getByLabel("Groq API Key", { exact: true }).fill("gsk-browser-test-placeholder");
-  await page.getByLabel("OpenAI API Key", { exact: true }).fill("sk-browser-test-placeholder");
-  await page.getByRole("button", { name: "Save API Keys" }).click();
+  const profile = page.getByRole("region", { name: "Profile", exact: true });
+  await expect(profile.locator("dt")).toHaveText(["Name", "Email"]);
+  await expect(profile.locator("dd")).toHaveText(["Guest", "Not signed in"]);
+  await expect(page.getByRole("button", { name: /API Keys/ })).toHaveCount(0);
+  const signIn = profile.getByRole("button", { name: "Sign in", exact: true });
+  // Account-free deployments retain the same profile without offering sign-in.
+  if (await signIn.count()) {
+    await signIn.click();
+    const dialog = page.getByRole("dialog", { name: "Sign in", exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("Email Address", { exact: true })).toBeVisible();
+    await expect(dialog.getByLabel("Password", { exact: true })).toBeVisible();
+  }
   await page.reload();
-  await page.getByRole("button", { name: /API Keys/ }).click();
-  await expect(page.getByLabel("Groq API Key", { exact: true })).toHaveValue("gsk-browser-test-placeholder");
-  await expect(page.getByLabel("OpenAI API Key", { exact: true })).toHaveAttribute("type", "password");
-  await page.getByLabel("Groq API Key", { exact: true }).fill("");
-  await page.getByLabel("OpenAI API Key", { exact: true }).fill("");
-  await page.getByRole("button", { name: "Save API Keys" }).click();
-  expect(await page.evaluate(() => localStorage.getItem("gesturesync.apiKeys"))).toBeNull();
+  await expect(profile.locator("dd")).toHaveText(["Guest", "Not signed in"]);
 });
 
-test("upload handoff preserves a local file and sends saved keys to ingestion", async ({ page }) => {
+test("upload handoff preserves a local file without sending legacy browser credentials", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("gesturesync.apiKeys", JSON.stringify({ groq: "gsk-test-only", openai: "" })));
   // Mock only the paid transcription response; test the actual UI handoff and translator.
   let uploadedKey: string | undefined;
@@ -125,20 +129,25 @@ test("upload handoff preserves a local file and sends saved keys to ingestion", 
     uploadedKey = route.request().headers()["x-groq-api-key"];
     await route.fulfill({ json: { success: true, projectId: null, segments: [{ start: 0, end: 3, text: "Hello my friend." }], duration: 3 } });
   });
-  // The placeholder key must not leave the local test context for paid glossing.
+  const translationKeys: string[] = [];
   await page.route("**/api/translate", async (route) => {
     const headers = { ...route.request().headers() };
+    if (headers["x-groq-api-key"]) translationKeys.push(headers["x-groq-api-key"]);
+    // Keep test credentials local even if this regression is reintroduced.
     delete headers["x-groq-api-key"];
-    await route.continue({ headers });
+    // Inspect the actual client headers above before optional quota-free
+    // server fallback, so the credential-forwarding assertion stays intact.
+    await route.continue({ headers: ruleGlossHeaders(headers) });
   });
   await page.goto("/dashboard");
   await page.locator('input[type="file"]').setInputFiles({ name: "test-audio.wav", mimeType: "audio/wav", buffer: Buffer.alloc(64) });
   await page.getByRole("button", { name: /Synthesize ASL/ }).click();
   await expect(page).toHaveURL(/\/player\/local$/);
-  expect(uploadedKey).toBe("gsk-test-only");
+  expect(uploadedKey).toBeUndefined();
   expect(await page.evaluate(() => sessionStorage.getItem("sourceType"))).toBe("file");
   expect(await page.evaluate(() => sessionStorage.getItem("sourceVideoUrl"))).toMatch(/^blob:/);
   await expect(page.getByRole("button", { name: "Play", exact: true })).toBeEnabled({ timeout: 60_000 });
+  expect(translationKeys).toEqual([]);
 });
 
 test("oversized uploads are rejected before a request is sent", async ({ page }) => {

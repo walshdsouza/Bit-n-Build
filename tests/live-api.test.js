@@ -27,7 +27,7 @@ const { transcribeAudioFile } = require('./.build/lib/whisper.js');
   ] };
   const normalProvider = async (url, options) => {
     calls++;
-    equal(url, 'https://api.groq.com/openai/v1/audio/transcriptions');
+    equal(url, 'https://api.groq.com/openai/v1/audio/translations');
     equal(options.headers.Authorization, 'Bearer test-live-groq-key');
     equal(options.body.get('model'), 'whisper-large-v3');
     return Response.json(providerTranscript);

@@ -1,4 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
+import { useRuleGlossWhenRequested } from "./rule-gloss-fixture";
+
+test.beforeEach(async ({ page }) => useRuleGlossWhenRequested(page));
 
 const playhead = (page: Page) => page.getByRole("slider", { name: "Playback position" });
 const position = (page: Page) => playhead(page).inputValue().then(Number);

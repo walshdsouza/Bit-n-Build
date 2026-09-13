@@ -226,7 +226,7 @@ export default function LiveMeeting() {
   const silent = capturing && (audioStatus?.state === "silent" || audioStatus?.state === "muted");
   const captureIssue = capturing && (audioStatus?.state === "suspended" || audioStatus?.state === "stalled");
   const meterLevel = audioStatus?.level ? Math.round(Math.max(0, Math.min(1, (20 * Math.log10(audioStatus.level) + 80) / 80)) * 100) : 0;
-  const status = capturing ? (pending ? (requestSeconds >= 8 ? "Transcription is taking longer than usual…" : "Turning speech into captions…") : silent ? "No audio detected" : noSpeech ? "Audio received; waiting for clear English speech" : "Listening for speech")
+  const status = capturing ? (pending ? (requestSeconds >= 8 ? "Transcription is taking longer than usual…" : "Turning speech into captions…") : silent ? "No audio detected" : noSpeech ? "Audio received; waiting for clear speech" : "Listening for speech")
     : finishing || pending ? "Finishing captured audio" : active ? "Finishing ASL playback" : started ? "Sharing stopped" : "Ready to connect";
 
   return (
@@ -235,7 +235,7 @@ export default function LiveMeeting() {
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-primary">Conversation, made visible</p>
           <h1 className="font-display text-3xl font-bold tracking-tight text-on-surface sm:text-4xl">Live meetings</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-on-surface-variant">Turn spoken English from your meeting or your microphone into captions and an ASL avatar.</p>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-on-surface-variant">Turn speech from your meeting or your microphone into English captions and an ASL avatar.</p>
         </div>
         <span className="self-start rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">ASL · American Sign Language</span>
       </header>

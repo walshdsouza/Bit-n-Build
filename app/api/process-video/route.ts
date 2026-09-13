@@ -14,6 +14,7 @@ import { isRecord, readJsonObject, RequestError } from "@/lib/request-validation
 import type { TranscriptSegment } from "@/lib/types";
 import { fetchNativeYouTubeCaptions } from "@/lib/youtube-captions";
 import { readProviderYouTube } from "@/lib/youtube-provider";
+import { isTranslationJob, translateYouTubeTranscript } from "@/lib/youtube-translation-job";
 
 export const runtime = "nodejs";
 export const maxDuration = 180;
@@ -113,6 +114,7 @@ async function readYouTubeCaptions(videoId: string): Promise<{ segments: Transcr
 
 export async function POST(req: NextRequest) {
   const temps: string[] = [];
+  const startedAt = Date.now();
   try {
     const contentType = req.headers.get("content-type") || "";
     let sourceUrl: string | null = null;
@@ -144,27 +146,36 @@ export async function POST(req: NextRequest) {
     if (sourceUrl) {
       const videoId = extractYouTubeVideoId(sourceUrl);
       if (!videoId) throw new RequestError("Provide a valid YouTube URL.");
-      if (jobToken && !youtubeKey?.trim()) throw new RequestError("The YouTube import key is no longer configured. Add it in Settings to resume.", 422, "YOUTUBE_NOT_CONFIGURED");
-      const hosted = youtubeKey?.trim() ? await readProviderYouTube(videoId, youtubeKey, jobToken) : null;
+      const translating = isTranslationJob(jobToken);
+      if (jobToken && !translating && !youtubeKey?.trim()) throw new RequestError("YouTube import is no longer configured on this server. Please contact the site owner.", 422, "YOUTUBE_NOT_CONFIGURED");
+      const hosted = !translating && youtubeKey?.trim() ? await readProviderYouTube(videoId, youtubeKey, jobToken) : null;
       if (hosted?.jobToken) return NextResponse.json({ pending: true, jobToken: hosted.jobToken, pollAfterMs: 2500 }, { status: 202 });
-      const captions = hosted?.segments ? { segments: hosted.segments } : await readYouTubeCaptions(videoId);
+      const captions = translating ? { segments: [] } : hosted?.segments ? { segments: hosted.segments } : await readYouTubeCaptions(videoId);
       let result: MediaResult;
       let provider: string;
       let title = `YouTube Video: ${videoId}`;
       let fallback: string | undefined;
-      if (captions.segments.length) {
+      if (translating || captions.segments.length) {
+        const translation = await translateYouTubeTranscript(translating ? jobToken! : { segments: captions.segments, language: hosted?.language }, {
+          videoId, signingKey: youtubeKey || groqKey || openaiKey || '', groqKey, openaiKey, signal: req.signal,
+          // Fast native captions leave time to translate long Hindi videos.
+          // Slow AI generation still leaves a bounded window inside maxDuration.
+          timeoutMs: Math.max(1000, 165_000 - (Date.now() - startedAt)),
+        });
+        if (translation.jobToken) return NextResponse.json({ pending: true, jobToken: translation.jobToken, pollAfterMs: translation.pollAfterMs }, { status: 202 });
+        const segments = translation.segments!;
         result = {
-          segments: captions.segments,
-          text: captions.segments.map((segment) => segment.text).join(" "),
-          duration: captions.segments.reduce((duration, segment) => Math.max(duration, segment.end), 0),
+          segments,
+          text: segments.map((segment) => segment.text).join(" "),
+          duration: segments.reduce((duration, segment) => Math.max(duration, segment.end), 0),
         };
-        provider = hosted ? "supadata" : "youtube-captions";
+        provider = translating ? "translated-captions" : hosted ? "supadata" : "youtube-captions";
       } else {
         if (process.env.VERCEL && !youtubeKey?.trim()) {
-          throw new RequestError("YouTube is blocking direct access from this deployment. Add a Supadata key in Settings for YouTube imports, or use tab audio capture below.", 422, "YOUTUBE_NOT_CONFIGURED");
+          throw new RequestError("YouTube import is not available from this server. Use tab audio capture below, or contact the site owner.", 422, "YOUTUBE_NOT_CONFIGURED");
         }
         if (!groqKey?.trim() && !openaiKey?.trim()) {
-          throw new RequestError("YouTube captions could not be read. Add a Groq or OpenAI API key in Settings to transcribe the audio instead.", 422, "TRANSCRIPTION_NOT_CONFIGURED");
+          throw new RequestError("YouTube captions could not be read and audio transcription is not configured on this server. Please contact the site owner.", 422, "TRANSCRIPTION_NOT_CONFIGURED");
         }
         const tempDir = await getTempDir();
         let audio;

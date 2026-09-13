@@ -149,8 +149,25 @@
 
 /* Range input */
 input[type="range"] { -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
-input[type="range"]::-webkit-slider-track { background: #2a292f; border-radius: 9999px; height: 6px; }
+input[type="range"]::-webkit-slider-runnable-track { background: #2a292f; border-radius: 9999px; height: 6px; }
 input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #4cd7f6; box-shadow: 0 0 8px rgba(76, 215, 246, 0.6); margin-top: -5px; }
+input[type="range"]::-moz-range-track { background: #2a292f; border-radius: 9999px; height: 6px; }
+input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border: 0; border-radius: 50%; background: #4cd7f6; }
+
+/* The played section uses the same fill in Chromium, Safari, and Firefox. */
+input.playback-progress::-webkit-slider-runnable-track {
+  height: 8px;
+  background: linear-gradient(to right, var(--color-tertiary-container) 0%, var(--color-tertiary-container) var(--playback-progress, 0%), var(--color-outline-variant) var(--playback-progress, 0%), var(--color-outline-variant) 100%);
+}
+input.playback-progress::-webkit-slider-thumb { background: var(--color-tertiary-container); margin-top: -4px; box-shadow: none; }
+input.playback-progress::-moz-range-track { height: 8px; background: var(--color-outline-variant); }
+input.playback-progress::-moz-range-progress { height: 8px; background: var(--color-tertiary-container); border-radius: 9999px; }
+input.playback-progress::-moz-range-thumb { background: var(--color-tertiary-container); }
+input.playback-progress:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 3px; border-radius: 6px; }
+
+/* Fit 16:9 media to the available pane, including short landscape windows. */
+.source-media-stage { container-type: size; }
+.source-video-frame { width: min(100cqw, calc(100cqh * 16 / 9)); aspect-ratio: 16 / 9; }
 
 /* Selection */
 ::selection { background: #4cd7f6; color: #003640; }

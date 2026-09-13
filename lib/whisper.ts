@@ -18,12 +18,14 @@ export interface TranscriptionOptions {
 
 export function requireTranscriptionKey(groqKey?: string | null, openaiKey?: string | null): void {
   if (!groqKey?.trim() && !openaiKey?.trim()) {
-    throw new RequestError('Audio transcription needs a Groq or OpenAI API key. Add a key in Settings and retry, or open the demo player.', 422);
+    throw new RequestError('Audio transcription is not configured on this server. Please contact the site owner, or open the demo player.', 422);
   }
 }
 
 /**
- * Sends an audio file to Groq Whisper or OpenAI Whisper API.
+ * Sends audio to Whisper's speech-to-English endpoint. ASL/ISL/BSL gloss
+ * dictionaries consume English lemmas; ordinary transcription would return
+ * Hindi/other source scripts that the local rule glosser cannot interpret.
  * Prioritizes Groq for speed if both keys are present.
  */
 export async function transcribeAudioFile(audioBlob: Blob, filename: string, groqKey?: string | null, openaiKey?: string | null, options: TranscriptionOptions = {}): Promise<TranscriptionResult> {
@@ -34,8 +36,8 @@ export async function transcribeAudioFile(audioBlob: Blob, filename: string, gro
   }
   const useGroq = !!groqKey?.trim();
   const endpoint = useGroq 
-    ? 'https://api.groq.com/openai/v1/audio/transcriptions'
-    : 'https://api.openai.com/v1/audio/transcriptions';
+    ? 'https://api.groq.com/openai/v1/audio/translations'
+    : 'https://api.openai.com/v1/audio/translations';
   
   const apiKey = useGroq ? groqKey : openaiKey;
   const model = useGroq ? 'whisper-large-v3' : 'whisper-1';
@@ -45,7 +47,7 @@ export async function transcribeAudioFile(audioBlob: Blob, filename: string, gro
   formData.append('file', audioBlob, filename || 'audio.mp3');
   formData.append('model', model);
   formData.append('response_format', 'verbose_json');
-  formData.append('timestamp_granularities[]', 'segment');
+  // verbose_json includes translated segment timestamps on both providers.
 
   // This helper also runs in the standalone extension, without Node globals.
   const defaultTimeout = typeof process !== 'undefined' && process.env.VERCEL ? 40_000 : 120_000;
@@ -77,7 +79,7 @@ export async function transcribeAudioFile(audioBlob: Blob, filename: string, gro
 
   if (!response.ok) {
     const message = response.status === 401 || response.status === 403
-      ? 'The transcription API key was rejected. Update your key in Settings.'
+      ? 'The transcription service is unavailable. Please contact the site owner.'
       : response.status === 429
         ? 'The transcription provider is rate limited or out of credits. Check your account and retry.'
         : `The transcription provider could not process this audio (HTTP ${response.status}).`;

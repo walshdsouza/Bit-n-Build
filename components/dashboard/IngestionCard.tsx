@@ -1,8 +1,6 @@
 "use client";
-import { useEffect, useState, useRef, useSyncExternalStore } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { getApiKeyHeaders, getApiKeysSnapshot, parseApiKeys, subscribeToApiKeys } from "@/lib/client-api-keys";
 import TabAudioCapture from "./TabAudioCapture";
 
 interface IngestionCardProps {
@@ -18,10 +16,8 @@ interface ImportError {
 
 export default function IngestionCard({ serverTranscriptionProvider = null, serverYouTubeConfigured = false }: IngestionCardProps) {
   const router = useRouter();
-  const snapshot = useSyncExternalStore(subscribeToApiKeys, getApiKeysSnapshot, () => "");
-  const savedKeys = parseApiKeys(snapshot);
-  const transcriptionConfigured = Boolean(serverTranscriptionProvider || savedKeys.groq || savedKeys.openai);
-  const youtubeConfigured = serverYouTubeConfigured || Boolean(savedKeys.supadata);
+  const transcriptionConfigured = Boolean(serverTranscriptionProvider);
+  const youtubeConfigured = serverYouTubeConfigured;
   const [url, setUrl] = useState("");
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -67,7 +63,7 @@ export default function IngestionCard({ serverTranscriptionProvider = null, serv
 
       let res = await fetch("/api/process-video", {
         method: "POST",
-        headers: { ...getApiKeyHeaders(), ...(url.trim() ? { "Content-Type": "application/json" } : {}) },
+        headers: url.trim() ? { "Content-Type": "application/json" } : {},
         body,
         signal: controller.signal,
       });
@@ -77,6 +73,10 @@ export default function IngestionCard({ serverTranscriptionProvider = null, serv
       while (res.status === 202 && data?.pending === true && typeof data.jobToken === "string") {
         const jobToken = data.jobToken;
         sessionStorage.setItem("youtubeImportJob", JSON.stringify({ url: url.trim(), jobToken }));
+        if (typeof data.pollAfterMs === "number" && Number.isFinite(data.pollAfterMs) && data.pollAfterMs > 30000) {
+          const minutes = Math.max(1, Math.ceil(data.pollAfterMs / 60000));
+          throw new Error(`The translation service is busy. Your progress is saved. Retry in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`);
+        }
         setImportStage("Preparing YouTube transcript…");
         const pause = typeof data.pollAfterMs === "number" ? Math.max(1000, Math.min(10000, data.pollAfterMs)) : 2500;
         await new Promise<void>((resolve, reject) => {
@@ -86,7 +86,7 @@ export default function IngestionCard({ serverTranscriptionProvider = null, serv
           controller.signal.addEventListener("abort", onAbort, { once: true });
         });
         res = await fetch("/api/process-video", {
-          method: "POST", headers: { ...getApiKeyHeaders(), "Content-Type": "application/json" },
+          method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url: url.trim(), jobToken }), signal: controller.signal,
         });
         raw = await res.json().catch(() => null);
@@ -224,13 +224,10 @@ export default function IngestionCard({ serverTranscriptionProvider = null, serv
         </div>
         <p id="youtube-import-note" className="mt-2 text-xs leading-relaxed text-on-surface-variant">
           {youtubeConfigured ? "YouTube import is configured. Public videos use captions when available, with audio transcription as a fallback."
-            : <>Direct YouTube imports need a YouTube service key for this deployment. <Link href="/settings" className="text-primary underline underline-offset-2">Set up YouTube imports</Link>, or capture the video’s tab audio below.</>}
+            : "Direct YouTube imports are unavailable right now. You can capture the video’s tab audio below."}
         </p>
         <p className="mt-2 text-xs leading-relaxed text-on-surface-variant">
-          {serverTranscriptionProvider
-            ? `${serverTranscriptionProvider === "groq" ? "Groq" : "OpenAI"} transcription is configured on this deployment. You do not need to add an API key.`
-            : transcriptionConfigured ? "Your saved API key will be used for audio transcription."
-              : <>Audio transcription requires an API key. <Link href="/settings" className="text-primary underline underline-offset-2">Configure API keys</Link></>}
+          {transcriptionConfigured ? "Audio transcription is ready." : "Audio transcription is currently unavailable. Please try again later."}
         </p>
 
         {/* Synthesize */}

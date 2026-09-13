@@ -16,13 +16,13 @@ const ffmpeg = require("@ffmpeg-installer/ffmpeg").path;
   global.fetch = async () => { requests++; throw new Error("Unexpected network request"); };
   const rejected = async (promise, match) => { await assert.rejects(promise, match); assertions++; };
   try {
-    await rejected(transcribeAudioFile(audio, "speech.wav"), (error) => error.status === 422 && /API key/.test(error.message));
+    await rejected(transcribeAudioFile(audio, "speech.wav"), (error) => error.status === 422 && /not configured/.test(error.message));
     assert.equal(requests, 0); assertions++;
     await rejected(transcribeAudioFile(new Blob([]), "empty.wav", "test-groq-key"), (error) => error.status === 400);
     assert.equal(requests, 0); assertions++;
 
     global.fetch = async (url, options) => {
-      assert.equal(url, "https://api.groq.com/openai/v1/audio/transcriptions"); assertions++;
+      assert.equal(url, "https://api.groq.com/openai/v1/audio/translations"); assertions++;
       assert.equal(options.headers.Authorization, "Bearer test-groq-key"); assertions++;
       assert.equal(options.body.get("model"), "whisper-large-v3"); assertions++;
       assert.equal(options.body.get("file").name, "speech.wav"); assertions++;
@@ -32,7 +32,7 @@ const ffmpeg = require("@ffmpeg-installer/ffmpeg").path;
     assert.deepEqual(result, { text: "Real spoken words.", duration: 4, segments: [{ start: 0, end: 4, text: "Real spoken words." }], provider: "groq-whisper" }); assertions++;
 
     global.fetch = async (url, options) => {
-      assert.equal(url, "https://api.openai.com/v1/audio/transcriptions"); assertions++;
+      assert.equal(url, "https://api.openai.com/v1/audio/translations"); assertions++;
       assert.equal(options.body.get("model"), "whisper-1"); assertions++;
       return Response.json({ text: "Actual transcript without timestamps.", duration: 5 });
     };
@@ -75,7 +75,7 @@ const ffmpeg = require("@ffmpeg-installer/ffmpeg").path;
     global.fetch = async () => Response.json(null);
     await rejected(transcribeAudioFile(audio, "speech.wav", "test-groq-key"), (error) => error.status === 502);
     global.fetch = async () => new Response("private provider account details", { status: 401 });
-    await rejected(transcribeAudioFile(audio, "speech.wav", "test-groq-key"), (error) => error.status === 502 && /key was rejected/.test(error.message) && !error.message.includes("private provider"));
+    await rejected(transcribeAudioFile(audio, "speech.wav", "test-groq-key"), (error) => error.status === 502 && /service is unavailable/.test(error.message) && !error.message.includes("private provider"));
     global.fetch = async () => new Response("quota", { status: 429 });
     await rejected(transcribeAudioFile(audio, "speech.wav", "test-groq-key"), (error) => error.status === 429);
     global.fetch = async () => { throw new Error("Network failed"); };

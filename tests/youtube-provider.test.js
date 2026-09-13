@@ -49,9 +49,12 @@ const { readProviderYouTube, parseProviderTranscript } = require('./.build/lib/y
     global.fetch = async () => Response.json({ status: 'completed', result: { content: 'untimed result', lang: 'en' } });
     await rejects(() => readProviderYouTube(video, 'provider-test-key', pending.jobToken), 'YOUTUBE_RESPONSE_INVALID');
     global.fetch = async () => Response.json({ content, lang: 'es' });
-    await rejects(() => readProviderYouTube(video, 'provider-test-key'), 'YOUTUBE_LANGUAGE_UNSUPPORTED');
-    global.fetch = async () => Response.json({ status: 'completed', result: { content, lang: 'hi' } });
-    await rejects(() => readProviderYouTube(video, 'provider-test-key', pending.jobToken), 'YOUTUBE_LANGUAGE_UNSUPPORTED');
+    equal((await readProviderYouTube(video, 'provider-test-key')).language, 'es');
+    const hindiContent = [{ text: 'मुझे पानी चाहिए।', offset: 1250, duration: 1750 }];
+    global.fetch = async () => Response.json({ status: 'completed', result: { content: hindiContent, lang: 'hi' } });
+    const hindi = await readProviderYouTube(video, 'provider-test-key', pending.jobToken);
+    equal(hindi.language, 'hi');
+    equal(hindi.segments, [{ text: 'मुझे पानी चाहिए।', start: 1.25, end: 3 }]);
     global.fetch = async () => Response.json({ content, lang: 'en-US' });
     equal((await readProviderYouTube(video, 'provider-test-key')).language, 'en-US');
     global.fetch = async () => { throw new Error('A tampered token must never fetch'); };

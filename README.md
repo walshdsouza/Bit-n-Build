@@ -5,7 +5,7 @@
 <h1 align="center">UNMUTE</h1>
 
 <p align="center">
-  English speech and captions, made visible through a 3D ASL avatar.
+  Speech and captions, made visible through a 3D ASL avatar.
 </p>
 
 <p align="center">
@@ -17,7 +17,7 @@
 
 UNMUTE turns spoken media and captions into an American Sign Language (ASL) signing plan, rendered by the NEXA avatar. Import a YouTube video or recording, review and edit its transcript, control playback, and save the track in your browser. Live Meetings brings the same caption-and-avatar experience to audio shared from a meeting tab.
 
-The web app currently uses **English input and ASL output**. It is a prototype with limited sign vocabulary; unfamiliar words use fingerspelling. It does not recognize hand movements in source videos.
+The web app produces **English captions and ASL output**. Hindi YouTube captions are translated into English before signing; recorded and live speech use Whisper's speech-to-English translation endpoint. Other source languages depend on the configured providers' language coverage. It is a prototype with limited sign vocabulary; unfamiliar words use fingerspelling. It does not recognize hand movements in source videos.
 
 ![UNMUTE player with the NEXA avatar, source transcript, gloss inspector and playback controls](public/features/player.png)
 
@@ -43,7 +43,7 @@ The web app currently uses **English input and ASL output**. It is a prototype w
 | Media uploads | Extract and transcribe speech from video or audio files. |
 | Tab audio capture | Record audio from a browser tab, review it, then create a translation. |
 | Live Meetings | Translate a meeting tab, your microphone, or both into captions and ASL playback. |
-| Playback controls | Play, pause, seek, replay, and choose 0.5×, 1×, 1.5× or 2× speed. |
+| Playback controls | Play, pause, seek on a blue progress track, mute/unmute, and choose playback speed. Uploaded MP4s also have native video controls. |
 | Transcript editing | Inspect the text behind a segment and regenerate its signing plan. |
 | Device saves | Retain the transcript, edits, signing plan, playback position and uploaded media in IndexedDB. |
 | SiGML export | Download the generated sign notation from the player. |
@@ -87,8 +87,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 | Capability | Required configuration |
 | --- | --- |
 | Demo and rule-based text translation | None |
-| YouTube URL imports on Vercel | `SUPADATA_API_KEY` |
-| Uploaded media and recorded tab audio | `GROQ_API_KEY` or `OPENAI_API_KEY`, on the server or in browser Settings |
+| YouTube URL imports on Vercel | `SUPADATA_API_KEY`; non-English captions also need a server Groq or OpenAI key |
+| Uploaded media and recorded tab audio | **Server-side** `GROQ_API_KEY` or `OPENAI_API_KEY` |
 | Live Meetings | **Server-side** `GROQ_API_KEY` or `OPENAI_API_KEY` |
 | AI-assisted gloss translation | Groq or OpenAI key; local rules remain the fallback |
 | Save on this device | IndexedDB support; no account or database required |
@@ -98,9 +98,9 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 
 Groq is preferred when both Groq and OpenAI are configured. OpenAI is used when no Groq key is available; transcription does not automatically switch providers after a failed request.
 
-**Settings → API Keys** accepts personal Groq, OpenAI and Supadata keys. These are stored in the current browser's local storage and sent through the app server to the relevant provider. For ordinary import/translation requests, a personal key overrides the server key for that provider. Clear a field and save to remove the personal override.
+Caption translation uses Groq `gpt-oss-120b`, with `gpt-oss-20b` as a fallback when the primary model has a long quota reset. Both use caption IDs to preserve timing. Provider reset times are respected, and long YouTube translations retain completed work in signed continuation tokens between requests. Longer quota delays show when to retry; an ordinary import waits for up to eight minutes. Retrying the same URL resumes saved progress until the token expires after one hour.
 
-Live Meetings uses server credentials only. Adding a personal key in Settings does not configure that feature.
+The website uses server credentials for imports, speech translation and Live Meetings. Users do not need to provide API keys. The standalone Firefox extension has its own provider configuration because it can run independently of the website.
 
 `.env.local` is ignored by Git. Provider secrets belong in server environment variables, without a `NEXT_PUBLIC_` prefix. The two Supabase variables above are public client configuration.
 
@@ -154,7 +154,7 @@ flowchart LR
     P --> A[NEXA avatar]
 ```
 
-Supadata handles hosted YouTube ingestion. Uploaded media passes through FFmpeg and Whisper; live audio is sent as independent WAV segments. The translation layer applies language rules or AI glossing, builds HamNoSys/SiGML notation, and creates a timed motion plan. Timing and text cues guide articulation and non-manual markers.
+Supadata handles hosted YouTube ingestion with `mode=auto`: it retrieves existing captions or generates a transcript from speech when captions are unavailable. Non-English captions are translated in bounded batches with per-caption IDs; their original timestamps are retained. Uploaded media passes through FFmpeg and Whisper's speech-to-English endpoint; live audio uses the same endpoint with independent WAV segments. The translation layer applies language rules or AI glossing, builds HamNoSys/SiGML notation, and creates a timed motion plan. Timing and text cues guide articulation and non-manual markers.
 
 The player uses the source media as its clock when available and a motion-plan clock otherwise. Unknown vocabulary is fingerspelled. The library retains ASL, ISL and experimental BSL profiles for development, while the web interface uses ASL.
 
@@ -171,7 +171,7 @@ lib/dictionaries/        Sign vocabulary and language data
 utils/supabase/          Optional authentication and database clients
 public/                  Branding, screenshots and the NEXA model
 scripts/                 Downloader preparation and demo recording
-extension/               Optional standalone Firefox sidebar
+extension/               Standalone Firefox Meet widget and sidebar
 tests/                   Pipeline, API and browser tests
 ```
 
@@ -269,9 +269,9 @@ npx vercel deploy --prod
 
 | Situation | What to check |
 | --- | --- |
-| YouTube import is not configured | Set `SUPADATA_API_KEY` on the server and redeploy, or add a personal Supadata key in Settings. |
-| A video cannot be imported | Check that it is public and has usable English speech/captions. Provider plans, quotas and access restrictions still apply. Try tab audio capture or a file upload. |
-| Transcription key error | Check the selected provider's key. A saved personal key takes precedence over the server key for that provider. |
+| YouTube import is not configured | The site owner should set `SUPADATA_API_KEY` on the server and redeploy. |
+| A video cannot be imported | Check that it is public and has usable speech/captions. Supadata can generate transcripts without a caption track, but provider plans, quotas and access restrictions still apply. Try tab audio capture or a file upload. |
+| Speech translation unavailable | The site owner should check the server's Groq/OpenAI credentials and provider limits. Long non-English videos can take longer because captions must also be translated. |
 | Live Meetings cannot hear your own voice | Choose **My microphone**, or select **Include my microphone** alongside **Meeting tab**. Tab audio alone excludes your own microphone. |
 | Live Meetings cannot transcribe | Check the audio level and selected source. A **server** transcription key is required. A stalled request stops with a retry instead of waiting indefinitely. |
 | A saved track is missing | Use the same browser and website address where it was saved. Browser data clearing removes local tracks. |
@@ -280,13 +280,13 @@ npx vercel deploy --prod
 - **Uploads:** the dashboard and Vercel routes accept files up to **4 MB**. The local ingestion API accepts larger files, but this does not increase the dashboard's limit.
 - **Tab recordings:** capped at **10 minutes or 3.8 MB**. Live Meetings processes short segments and stops sharing if its bounded queue falls too far behind.
 - **Signing quality:** limited by the dictionary, translation rules and generated plan. Software tests do not certify every sign's linguistic accuracy; dense or unfamiliar speech can require additional signing time.
-- **Source language:** the web pipeline expects English. It does not infer a target sign language from the source audio or interpret visible signing gestures.
+- **Source language:** speech is translated to English for ASL signing. Hindi captions require the server's text-translation provider; English captions can use local gloss rules. Translation quality depends on clear speech, source captions and the provider. The app does not infer a target sign language from the source audio or interpret visible signing gestures.
 
 For local development without Supadata, an optional Python caption fallback is available through `python -m pip install youtube-transcript-api`. Set `PYTHON_PATH` only if a specific interpreter is needed. This fallback is skipped on Vercel.
 
 ## Firefox extension
 
-`extension/` contains an optional standalone Firefox sidebar for Google Meet with separate provider settings. The web app's Live Meetings feature does not require it.
+`extension/` contains a standalone Firefox extension for Google Meet with separate provider settings. A floating NEXA widget appears inside Meet and can be moved, resized, minimized or hidden and reopened. It shows the latest captions and shares the existing audio recorder with the optional sidebar. Only one view can own capture at a time. The web app's Live Meetings feature does not require the extension.
 
 After installing the root dependencies:
 
@@ -297,6 +297,8 @@ npm run build
 ```
 
 In Firefox, open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select `extension/manifest.json`. Configure a transcription key in the extension's own settings before starting capture.
+
+Reload an open Meet tab after loading the add-on, then select **Start** in the widget. It captures other participants' incoming audio; your own microphone is not included. **Hide** and **Minimize** keep the session running; use **Stop** to end capture. Temporary add-ons must be loaded again after Firefox restarts.
 
 See [build instructions](extension/README-BUILD.txt), [reviewer/source instructions](extension/store/SOURCE_SUBMISSION.md), and the [extension privacy policy](extension/store/PRIVACY.md) for details and packaging commands.
 

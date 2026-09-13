@@ -32,9 +32,9 @@ export default function TopBar() {
         {/* New translation */}
         <Link
           href="/dashboard"
-          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-secondary-container to-primary-container text-on-primary text-xs font-semibold shadow-lg shadow-primary/20 hover:shadow-primary/35 hover:scale-[1.02] transition-all"
+          className="hidden min-h-11 items-center gap-1.5 rounded-lg border border-outline-variant bg-surface-container px-3 text-xs font-semibold text-primary transition-colors hover:border-primary/50 hover:bg-surface-container-high focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary sm:inline-flex"
         >
-          <span className="material-symbols-outlined text-[14px]">add</span>
+          <span className="material-symbols-outlined text-[16px]" aria-hidden="true">add</span>
           New Translation
         </Link>
         <UserProfile />

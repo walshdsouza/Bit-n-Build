@@ -33,27 +33,39 @@ for (const width of [320, 390, 1440]) {
   });
 }
 
-test("settings exposes only useful sections and persists optional YouTube credentials", async ({ page }) => {
+test("settings shows only the essential profile on mobile", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/settings");
   const nav = page.getByRole("navigation", { name: "Settings sections" });
-  await expect(nav.getByRole("button")).toHaveCount(2);
-  await expect(page.getByRole("button", { name: "Profile editing unavailable" })).toHaveCount(0);
-  await nav.getByRole("button", { name: /API Keys/ }).click();
-  await page.getByLabel("Supadata API Key", { exact: true }).fill("test-supadata-local-only");
-  await page.getByRole("button", { name: "Save API Keys" }).click();
-  await expect(page.getByRole("status")).toHaveText("API keys saved in this browser.");
+  await expect(nav.getByRole("link")).toHaveCount(1);
+  await expect(nav.getByRole("link", { name: "Profile", exact: true })).toHaveAttribute("aria-current", "page");
+  const profile = page.getByRole("region", { name: "Profile", exact: true });
+  await expect(profile.locator("dt")).toHaveText(["Name", "Email"]);
+  await expect(profile.locator("dd")).toHaveText(["Guest", "Not signed in"]);
+  await expect(page.getByText(/API Keys|Provider keys|Neural Engine|Avatar Configuration/)).toHaveCount(0);
+  await expect(profile.getByText("Your account on this deployment.")).toHaveCount(0);
+  await nav.getByRole("link", { name: "Profile", exact: true }).click();
+  await expect(profile).toBeInViewport();
   await page.reload();
-  await nav.getByRole("button", { name: /API Keys/ }).click();
-  await expect(page.getByLabel("Supadata API Key", { exact: true })).toHaveValue("test-supadata-local-only");
-  await expect(page.getByLabel("Supadata API Key", { exact: true })).toHaveAttribute("type", "password");
-  await page.getByRole("button", { name: "Show Supadata API Key" }).click();
-  await expect(page.getByLabel("Supadata API Key", { exact: true })).toHaveAttribute("type", "text");
-  await page.getByLabel("Supadata API Key", { exact: true }).fill("");
-  await page.getByRole("button", { name: "Save API Keys" }).click();
-  await expect(page.getByRole("status")).toHaveText("Saved API keys removed from this browser.");
-  expect(await page.evaluate(() => localStorage.getItem("gesturesync.apiKeys"))).toBeNull();
+  await expect(profile.locator("dt")).toHaveText(["Name", "Email"]);
   await noOverflow(page);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: "logs/settings-mobile-final.png", fullPage: true, style: "nextjs-portal { display: none; }" });
+});
+
+test("new translation has a restrained style and navigates to the dashboard", async ({ page }) => {
+  await page.goto("/settings");
+  const link = page.getByRole("banner").getByRole("link", { name: "New Translation", exact: true });
+  await expect(link).toBeVisible();
+  await link.focus();
+  await expect(link).toBeFocused();
+  const style = await link.evaluate((node) => {
+    const css = getComputedStyle(node);
+    return { backgroundImage: css.backgroundImage, boxShadow: css.boxShadow, height: node.getBoundingClientRect().height };
+  });
+  expect(style.backgroundImage).toBe("none");
+  expect(style.boxShadow).toBe("none");
+  expect(style.height).toBeGreaterThanOrEqual(44);
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/dashboard$/);
 });

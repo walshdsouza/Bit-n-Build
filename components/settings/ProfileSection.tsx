@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { isSupabaseConfigured } from "@/utils/supabase/config";
+import AuthModal from "@/components/auth/AuthModal";
 
 interface AccountProfile {
   name: string;
@@ -14,6 +15,8 @@ export default function ProfileSection() {
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [loaded, setLoaded] = useState(!configured);
   const [unavailable, setUnavailable] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
 
   useEffect(() => {
     if (!configured) return;
@@ -21,7 +24,7 @@ export default function ProfileSection() {
     async function loadProfile() {
       try {
         const { data, error } = await createClient().auth.getUser();
-        if (error) throw error;
+        if (error && error.name !== "AuthSessionMissingError") throw error;
         if (!cancelled && data.user) {
           const name: unknown = data.user.user_metadata.full_name;
           setProfile({ name: typeof name === "string" ? name : "Signed-in user", email: data.user.email ?? "" });
@@ -37,25 +40,22 @@ export default function ProfileSection() {
   }, [configured]);
 
   return (
-    <section id="profile" className="space-y-6">
-      <div>
-        <h2 className="font-headline-sm text-headline-sm text-on-surface mb-1">Profile</h2>
-        <p className="text-sm text-on-surface-variant">Your account on this deployment.</p>
-      </div>
-      {!loaded ? <p role="status" className="text-sm text-on-surface-variant">Loading account…</p> : profile ? (
-        <dl className="space-y-4 rounded-xl border border-outline-variant/40 bg-surface-container-low p-4">
-          <div><dt className="text-xs text-on-surface-variant">Name</dt><dd className="mt-1 text-sm text-on-surface">{profile.name}</dd></div>
-          <div><dt className="text-xs text-on-surface-variant">Email</dt><dd className="mt-1 break-all text-sm text-on-surface">{profile.email || "Not provided"}</dd></div>
+    <section id="profile" aria-labelledby="profile-heading" className="scroll-mt-20 space-y-6">
+      <h2 id="profile-heading" className="font-headline-sm text-headline-sm text-on-surface">Profile</h2>
+      {!loaded ? <p role="status" className="text-sm text-on-surface-variant">Loading profile…</p> : (
+        <dl className="space-y-5">
+          <div><dt className="text-xs text-on-surface-variant">Name</dt><dd className="mt-1 text-sm text-on-surface">{profile?.name ?? "Guest"}</dd></div>
+          <div><dt className="text-xs text-on-surface-variant">Email</dt><dd className="mt-1 break-all text-sm text-on-surface">{profile ? profile.email || "Not provided" : "Not signed in"}</dd></div>
         </dl>
-      ) : (
-        <div className="rounded-xl border border-outline-variant/40 bg-surface-container-low p-4">
-          <p className="font-semibold text-on-surface">Guest mode</p>
-          <p className="mt-2 text-sm leading-relaxed text-on-surface-variant">
-            {!configured ? "Accounts and saved projects are not configured on this deployment. The demo and translation tools remain available." : unavailable ? "The account service could not be reached. Try again later." : "You are not signed in. You can continue using the demo and translation tools."}
-          </p>
-        </div>
       )}
-      <p className="text-sm leading-relaxed text-on-surface-variant">Provider keys are managed in API Keys. They are saved on this device and do not require an account.</p>
+      {loaded && !profile && configured && (
+        <button type="button" onClick={() => { setAuthMode("signin"); setShowAuth(true); }}
+          className="inline-flex min-h-11 items-center rounded-lg border border-outline-variant px-4 text-sm font-medium text-primary transition-colors hover:bg-surface-container-high focus-visible:outline-2 focus-visible:outline-primary">
+          Sign in
+        </button>
+      )}
+      {unavailable && <p role="status" className="text-sm text-on-surface-variant">Unable to load your profile. Please try again later.</p>}
+      {showAuth && <AuthModal mode={authMode} onClose={() => setShowAuth(false)} onModeChange={setAuthMode} />}
     </section>
   );
 }

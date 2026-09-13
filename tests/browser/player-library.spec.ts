@@ -1,4 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
+import { useRuleGlossWhenRequested } from "./rule-gloss-fixture";
+
+test.beforeEach(async ({ page }) => useRuleGlossWhenRequested(page));
 
 const playhead = (page: Page) => page.getByRole("slider", { name: "Playback position" });
 
@@ -30,9 +33,12 @@ test("all four speeds change real source elapsed time and the avatar playhead to
   const speed = page.getByRole("combobox", { name: "Playback speed" });
   await expect(speed.locator("option")).toHaveText(["0.5×", "1×", "1.5×", "2×"]);
   await expect(page.getByRole("slider", { name: "Volume", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /^(Mute|Unmute|Target sign language)/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Mute", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: /^Target sign language/ })).toHaveCount(0);
   expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("signPlan")!).lang)).toBe("ASL");
   await page.getByRole("button", { name: "Play", exact: true }).click();
+  // Decoder/audio-device startup is not part of the playback-rate sample.
+  await expect.poll(() => page.locator("video").evaluate((video: HTMLVideoElement) => video.currentTime)).toBeGreaterThan(0.3);
   for (const rate of [0.5, 1, 1.5, 2]) {
     const before = await page.locator("video").evaluate((video: HTMLVideoElement) => video.currentTime);
     await speed.selectOption(String(rate));
@@ -135,6 +141,7 @@ test("YouTube refuses an unsupported rate without leaving a false 2× selection"
       private time = 0;
       private started = 0;
       private active = false;
+      private muted = false;
       private events: Events;
       constructor(_element: HTMLElement, options: { events: Events }) {
         this.events = options.events;
@@ -145,6 +152,9 @@ test("YouTube refuses an unsupported rate without leaving a false 2× selection"
       getPlaybackRate() { return 1; }
       getAvailablePlaybackRates() { return [1]; }
       setPlaybackRate() {}
+      mute() { this.muted = true; }
+      unMute() { this.muted = false; }
+      isMuted() { return this.muted; }
       playVideo() { if (!this.active) { this.started = performance.now(); this.active = true; } this.events.onStateChange({ data: 1 }); }
       pauseVideo() { this.time = this.getCurrentTime(); this.active = false; this.events.onStateChange({ data: 2 }); }
       seekTo(time: number) { this.time = time; this.started = performance.now(); }

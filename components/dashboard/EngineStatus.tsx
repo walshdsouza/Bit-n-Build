@@ -1,27 +1,19 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
-import { getApiKeysSnapshot, parseApiKeys, subscribeToApiKeys } from "@/lib/client-api-keys";
 
 interface EngineStatusProps {
   serverTranscriptionProvider?: "groq" | "openai" | null;
 }
 
 export default function EngineStatus({ serverTranscriptionProvider = null }: EngineStatusProps) {
-  const snapshot = useSyncExternalStore(subscribeToApiKeys, getApiKeysSnapshot, () => "");
-  const savedKeys = parseApiKeys(snapshot);
-  const provider = savedKeys.groq || serverTranscriptionProvider === "groq"
-    ? "Groq"
-    : savedKeys.openai || serverTranscriptionProvider === "openai" ? "OpenAI" : null;
+  const provider = serverTranscriptionProvider;
   const engines = [
     {
       name: "Audio transcription",
-      detail: serverTranscriptionProvider
-        ? `${serverTranscriptionProvider === "groq" ? "Groq" : "OpenAI"} configured on this deployment; no personal key needed`
-        : provider ? `${provider} API key saved in this browser` : "Add a Groq or OpenAI API key in Settings to transcribe audio",
+      detail: provider ? "Converts speech into English captions" : "Currently unavailable",
       icon: "mic", color: "text-primary",
     },
-    { name: "Gloss translation", detail: provider ? `${provider} with rule-based fallback` : "Rule-based translation available without an API key", icon: "psychology", color: "text-tertiary" },
+    { name: "Gloss translation", detail: provider ? "AI-assisted ASL translation" : "Rule-based text translation", icon: "psychology", color: "text-tertiary" },
     { name: "SiGML export", detail: "Generated from the signing plan", icon: "account_tree", color: "text-secondary" },
     { name: "NEXA avatar", detail: "3D signing playback in your browser", icon: "view_in_ar", color: "text-primary" },
   ];

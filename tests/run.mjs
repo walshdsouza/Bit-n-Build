@@ -35,6 +35,7 @@ const SOURCES = [
   "lib/youtube-url.ts",
   "lib/youtube-captions.ts",
   "lib/youtube-provider.ts",
+  "lib/youtube-translation-job.ts",
   "lib/youtube-audio.ts",
   "lib/avatar/pose-solver.ts",
   "lib/avatar/motion-timeline.ts",
@@ -94,5 +95,7 @@ if (apiOnly) {
   run("live-api.test.js");
   run("youtube-audio.test.js");
   run("youtube-provider.test.js");
+  run("transcript-translation.test.js");
+  run("youtube-translation-job.test.js");
   run("motion.test.js");
 }

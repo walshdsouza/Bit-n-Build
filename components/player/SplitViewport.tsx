@@ -14,6 +14,9 @@ interface YouTubePlayer {
   setPlaybackRate(rate: number): void;
   getPlaybackRate(): number;
   getAvailablePlaybackRates(): number[];
+  mute(): void;
+  unMute(): void;
+  isMuted(): boolean;
   destroy(): void;
 }
 interface YouTubeAPI {
@@ -56,10 +59,13 @@ interface SplitViewportProps {
   currentTime: number;
   onTimeUpdate: (time: number) => void;
   onDurationChange: (duration: number) => void;
-  onPlayPause: () => void;
+  onPlayingChange: (playing: boolean) => void;
   onMediaAvailability: (available: boolean) => void;
   onEnded: () => void;
   playbackRate: number;
+  muted: boolean;
+  onMutedChange: (muted: boolean) => void;
+  onAudioAvailability: (available: boolean) => void;
   onPlaybackRateChange: (rate: number) => void;
   seekRequest: { time: number; revision: number };
   segments: TranscriptSegment[];
@@ -78,8 +84,8 @@ function getYouTubeId(url: string): string | null {
   } catch { return null; }
 }
 
-export default function SplitViewport({ playing, currentTime, onTimeUpdate, onDurationChange, onPlayPause, onMediaAvailability, onEnded, playbackRate, onPlaybackRateChange, seekRequest, segments, plan = null, lang = "ASL", useCwasa = false, project = null }: SplitViewportProps) {
-  const [splitPos, setSplitPos] = useState(42);
+export default function SplitViewport({ playing, currentTime, onTimeUpdate, onDurationChange, onPlayingChange, onMediaAvailability, onEnded, playbackRate, muted, onMutedChange, onAudioAvailability, onPlaybackRateChange, seekRequest, segments, plan = null, lang = "ASL", useCwasa = false, project = null }: SplitViewportProps) {
+  const [splitPos, setSplitPos] = useState(project?.source_url ? 55 : 42);
   const [nexaFailed, setNexaFailed] = useState(false);
   const [mediaReady, setMediaReady] = useState(false);
   const [clockEnabled, setClockEnabled] = useState(false);
@@ -92,9 +98,13 @@ export default function SplitViewport({ playing, currentTime, onTimeUpdate, onDu
   const [rateNotice, setRateNotice] = useState<string | null>(null);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const programmaticVideoSeek = useRef<number | null>(null);
   const youtubeMount = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const ytPlayer = useRef<YouTubePlayer | null>(null);
+  const pendingYouTubeMute = useRef<{ value: boolean; until: number } | null>(null);
+  const audioState = useRef({ muted, onMutedChange, onAudioAvailability });
+  useEffect(() => { audioState.current = { muted, onMutedChange, onAudioAvailability }; }, [muted, onMutedChange, onAudioAvailability]);
   const live = useRef({ playing, currentTime, playbackRate, onPlaybackRateChange, seekRequest, onTimeUpdate, onDurationChange, onMediaAvailability, onEnded });
   useEffect(() => { live.current = { playing, currentTime, playbackRate, onPlaybackRateChange, seekRequest, onTimeUpdate, onDurationChange, onMediaAvailability, onEnded }; }, [playing, currentTime, playbackRate, onPlaybackRateChange, seekRequest, onTimeUpdate, onDurationChange, onMediaAvailability, onEnded]);
   const sourceUrl = project?.source_url ?? null;
@@ -116,6 +126,16 @@ export default function SplitViewport({ playing, currentTime, onTimeUpdate, onDu
     if (player.getPlaybackRate() === rate) return;
     setRateNotice(null);
     player.setPlaybackRate(rate);
+  }, []);
+  const applyYouTubeMute = useCallback((player: YouTubePlayer, next: boolean) => {
+    const pending = pendingYouTubeMute.current;
+    if (pending?.value === next && performance.now() < pending.until) return;
+    if (!pending && player.isMuted() === next) return;
+    // Commands cross the iframe boundary. Its cached isMuted() can briefly
+    // describe the previous state, including during quick repeated clicks.
+    pendingYouTubeMute.current = { value: next, until: performance.now() + 2000 };
+    if (next) player.mute();
+    else player.unMute();
   }, []);
   const finishSource = useCallback(() => {
     sourceEnded.current = true;
@@ -143,6 +163,10 @@ export default function SplitViewport({ playing, currentTime, onTimeUpdate, onDu
             sourceEnded.current = duration > 0 && live.current.currentTime >= duration;
             appliedSeek.current = live.current.seekRequest.revision;
             setMediaReady(true);
+            // Respect provider mute state, and retain an existing user mute.
+            if (audioState.current.muted) applyYouTubeMute(target, true);
+            else audioState.current.onMutedChange(target.isMuted());
+            audioState.current.onAudioAvailability(true);
             live.current.onDurationChange(sourceDuration.current);
             setSourceClock(!sourceEnded.current);
             target.seekTo(Math.min(live.current.currentTime, duration || live.current.currentTime), true);
@@ -153,6 +177,7 @@ export default function SplitViewport({ playing, currentTime, onTimeUpdate, onDu
             if (cancelled) return;
             setMediaError("Source video unavailable. You can still play the translation.");
             setMediaReady(false);
+            audioState.current.onAudioAvailability(false);
             setSourceClock(false);
           },
           onAutoplayBlocked: () => {
@@ -189,7 +214,29 @@ export default function SplitViewport({ playing, currentTime, onTimeUpdate, onDu
       setSourceClock(false);
     });
     return () => { cancelled = true; ytPlayer.current?.destroy(); ytPlayer.current = null; };
-  }, [youtubeId, setSourceClock, finishSource, applyYouTubeRate]);
+  }, [youtubeId, setSourceClock, finishSource, applyYouTubeRate, applyYouTubeMute]);
+
+  useEffect(() => {
+    if (!mediaReady) return;
+    if (videoRef.current) videoRef.current.muted = muted;
+    const player = ytPlayer.current;
+    if (player) applyYouTubeMute(player, muted);
+  }, [muted, mediaReady, applyYouTubeMute]);
+
+  useEffect(() => {
+    if (!youtubeId || !mediaReady) return;
+    // YouTube keyboard controls can change mute state independently of us.
+    const timer = window.setInterval(() => {
+      const player = ytPlayer.current;
+      if (!player) return;
+      const actual = player.isMuted();
+      const pending = pendingYouTubeMute.current;
+      if (pending && actual !== pending.value && performance.now() < pending.until) return;
+      pendingYouTubeMute.current = null;
+      audioState.current.onMutedChange(actual);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [youtubeId, mediaReady]);
 
   // Explicit seeks transfer clock ownership. Seeking into a signing tail
   // holds the source at its endpoint; seeking back restores source playback.
@@ -201,7 +248,8 @@ export default function SplitViewport({ playing, currentTime, onTimeUpdate, onDu
     sourceEnded.current = duration > 0 && seekRequest.time >= duration - 0.001;
     if (videoRef.current) {
       if (sourceEnded.current) videoRef.current.pause();
-      videoRef.current.currentTime = Math.min(seekRequest.time, duration || seekRequest.time);
+      programmaticVideoSeek.current = Math.min(seekRequest.time, duration || seekRequest.time);
+      videoRef.current.currentTime = programmaticVideoSeek.current;
     }
     if (ytPlayer.current) {
       if (sourceEnded.current) ytPlayer.current.pauseVideo();
@@ -220,7 +268,10 @@ export default function SplitViewport({ playing, currentTime, onTimeUpdate, onDu
     if (video) {
       video.playbackRate = playbackRate;
       if (playing && mediaReady && !sourceEnded.current) {
-        if (!sourceClock.current) video.currentTime = Math.min(live.current.currentTime, sourceDuration.current);
+        if (!sourceClock.current) {
+          programmaticVideoSeek.current = Math.min(live.current.currentTime, sourceDuration.current);
+          video.currentTime = programmaticVideoSeek.current;
+        }
         video.play().then(() => {
           if (attempt !== playAttempt.current || !live.current.playing || sourceEnded.current) return;
           playbackBlocked.current = false;
@@ -263,27 +314,64 @@ export default function SplitViewport({ playing, currentTime, onTimeUpdate, onDu
 
   return (
     <div ref={viewportRef} className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden relative">
-      <div className="bg-[#070709] flex flex-col items-center justify-center relative overflow-hidden shrink-0 w-full md:w-[var(--source-width)] h-[150px] md:h-auto" style={{ "--source-width": `${splitPos}%` } as React.CSSProperties}>
+      <div data-testid="source-pane" className="bg-[#070709] flex flex-col items-center justify-center relative overflow-hidden shrink-0 w-full md:w-[var(--source-width)] h-[clamp(150px,26dvh,220px)] md:h-auto" style={{ "--source-width": `${splitPos}%` } as React.CSSProperties}>
         <div className="absolute inset-0 bg-blueprint opacity-30" />
-        <div className="relative z-10 w-full h-full flex flex-col items-center justify-center gap-3 p-4 md:p-6">
+        <div className="relative z-10 w-full h-full flex flex-col items-center justify-center gap-3 p-3">
+          <div data-testid="source-media-stage" className="source-media-stage flex-1 min-h-0 w-full flex items-center justify-center">
           {youtubeId ? (
-            <div className="w-full max-w-md aspect-video rounded-xl overflow-hidden border border-outline-variant/30 relative">
+            <div data-testid="source-video-frame" className="source-video-frame rounded-lg overflow-hidden border border-outline-variant/30 relative">
               <div ref={youtubeMount} className="w-full h-full [&_iframe]:w-full [&_iframe]:h-full" />
             </div>
           ) : sourceType === "file" && sourceUrl ? (
-            <video ref={videoRef} src={sourceUrl} playsInline className="w-full max-w-md max-h-[70%] rounded-xl object-contain bg-black" onClick={onPlayPause}
+            <video ref={videoRef} src={sourceUrl} playsInline controls preload="metadata" muted={muted} className="w-full h-full rounded-lg object-contain bg-black"
+              onVolumeChange={(event) => onMutedChange(event.currentTarget.muted)}
+              onPlay={(event) => {
+                if (event.currentTarget.ended) return;
+                sourceEnded.current = false;
+                playbackBlocked.current = false;
+                setMediaError(null);
+                setSourceClock(true);
+                onTimeUpdate(event.currentTarget.currentTime);
+                onPlayingChange(true);
+              }}
+              onPause={(event) => {
+                if (event.currentTarget.ended || sourceEnded.current) return;
+                onTimeUpdate(event.currentTarget.currentTime);
+                onPlayingChange(false);
+              }}
+              onTimeUpdate={(event) => {
+                if (sourceClock.current && !sourceEnded.current && !event.currentTarget.seeking) onTimeUpdate(event.currentTarget.currentTime);
+              }}
+              onSeeking={(event) => {
+                const time = event.currentTarget.currentTime;
+                if (programmaticVideoSeek.current !== null && Math.abs(time - programmaticVideoSeek.current) < 0.1) return;
+                programmaticVideoSeek.current = null;
+                sourceEnded.current = time >= sourceDuration.current;
+                setSourceClock(!sourceEnded.current && !playbackBlocked.current);
+                onTimeUpdate(time);
+              }}
+              onSeeked={(event) => {
+                if (programmaticVideoSeek.current !== null) {
+                  programmaticVideoSeek.current = null;
+                  return;
+                }
+                onTimeUpdate(event.currentTarget.currentTime);
+              }}
+              onRateChange={(event) => onPlaybackRateChange(event.currentTarget.playbackRate)}
               onLoadedMetadata={(event) => {
                 const mediaDuration = event.currentTarget.duration;
                 if (!Number.isFinite(mediaDuration)) return;
                 sourceDuration.current = mediaDuration;
                 sourceEnded.current = live.current.currentTime >= mediaDuration;
-                event.currentTarget.currentTime = Math.min(live.current.currentTime, mediaDuration);
+                programmaticVideoSeek.current = Math.min(live.current.currentTime, mediaDuration);
+                event.currentTarget.currentTime = programmaticVideoSeek.current;
                 appliedSeek.current = seekRequest.revision;
                 setMediaReady(true); onDurationChange(mediaDuration);
+                onAudioAvailability(true);
                 setSourceClock(!sourceEnded.current);
               }}
               onEnded={finishSource}
-              onError={() => { setMediaError("Source file is unavailable. Re-upload it to restore video playback; the translation can still play."); setMediaReady(false); setSourceClock(false); }} />
+              onError={() => { setMediaError("Source file is unavailable. Re-upload it to restore video playback; the translation can still play."); setMediaReady(false); onAudioAvailability(false); setSourceClock(false); }} />
           ) : (
             <div className="max-w-sm text-center">
               <span className="hidden md:block material-symbols-outlined text-primary/70 text-[36px] mb-5" aria-hidden="true">closed_caption</span>
@@ -291,10 +379,11 @@ export default function SplitViewport({ playing, currentTime, onTimeUpdate, onDu
               <p data-testid="source-caption" className="text-sm md:text-xl leading-relaxed text-on-surface">{activeSegment?.text ?? (currentTime >= (plan?.duration ?? Infinity) ? "Translation complete" : "Ready to translate speech into movement.")}</p>
             </div>
           )}
+          </div>
           {rateNotice && <p role="status" className="text-xs text-amber-200 text-center max-w-md">{rateNotice}</p>}
           {mediaError && <p role="status" className="text-xs text-secondary text-center max-w-sm">{mediaError}</p>}
-          <div className="hidden md:flex gap-2 mt-3">
-            {[`English → ${lang}`, sourceType === "youtube" ? "YouTube" : sourceType === "file" ? "Uploaded media" : "Demo transcript"].map((tag) => <span key={tag} className="text-[10px] font-mono px-2 py-1 rounded-full bg-surface-container text-on-surface-variant">{tag}</span>)}
+          <div className="hidden md:flex gap-2 shrink-0">
+            {[`${lang} translation`, sourceType === "youtube" ? "YouTube" : sourceType === "file" ? "Uploaded media" : "Demo transcript"].map((tag) => <span key={tag} className="text-[10px] font-mono px-2 py-1 rounded-full bg-surface-container text-on-surface-variant">{tag}</span>)}
           </div>
         </div>
       </div>
